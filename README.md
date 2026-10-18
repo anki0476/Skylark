@@ -100,6 +100,8 @@ After workers complete the scheduled jobs, export a report for the returned benc
 
 The report retains every attempt and separates model, verifier, tool, policy, and split versions. Unknown checks stay outside observed-rate denominators and remain visible. Untriggered faults cannot become successful fault tests. The UI also provides **Download results JSON**.
 
+Reports use `skylark-report/2`: the dashboard loads summaries on the Results screen, while exports include per-run attempts and scoped usage details. The project budget remains explicitly global. Completed incident and comparison polling stops; idle workspace refreshes slow to ten seconds.
+
 ## Verify
 
 ```powershell
@@ -116,6 +118,7 @@ Run `python scripts/release_smoke.py` for a disposable offline check covering al
 ## Documentation
 
 - [Architecture and security](docs/architecture.md)
+- [End-to-end review and fixes](docs/review-2026-10-18.md)
 - [Implementation status](docs/implementation-status.md)
 - [Production roadmap](docs/production-roadmap.md)
 - [Submission checklist](docs/submission.md)

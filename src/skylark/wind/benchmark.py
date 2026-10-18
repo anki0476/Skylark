@@ -29,8 +29,8 @@ def schedule(db, mode="fixture", trials=3, split="held_out"):
                                  policy=Policy(stable_key=repaired,reconcile=repaired,validate_receipt=repaired)))
     if mode=="live":
         settings=Settings.load()
-        upper=len(specs)*8*2*(24000*settings.input_rate+settings.max_tokens*settings.output_rate)
-        if db.budget()["accounted_usd"]*1e6+upper>settings.cap_usd*1e6:
+        upper=len(specs)*8*2*math.ceil(24000*settings.input_rate+settings.max_tokens*settings.output_rate)
+        if db.budget(include_attempts=False)["accounted_micros"]+upper>int(settings.cap_usd*1_000_000):
             raise ValueError("Full protocol exceeds the configured maximum allowance. Predeclare fewer trials before collecting results.")
     ident=uuid.uuid4().hex
     snapshots=[(uuid.uuid4().hex,freeze(spec,model)) for spec in specs]

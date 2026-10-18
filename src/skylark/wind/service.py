@@ -1,4 +1,5 @@
 import uuid
+import math
 from .domain import RunSpec, Policy, freeze, canonical, TOOL_SCHEMAS, digest, VERIFIER_VERSION
 from .provider import Settings, Nebius
 from .db import Conflict
@@ -64,7 +65,7 @@ def propose(db, run_id, kind="runtime"):
         if len(calls) != 1 or calls[0].get("function", {}).get("name") != "explain_repair":
             raise ValueError("Model diagnosis did not match the supported repair schema")
         data = json.loads(calls[0]["function"]["arguments"])
-        if set(data) != {"explanation"} or not isinstance(data["explanation"], str) or not 1 <= len(data["explanation"]) <= 2000:
+        if not isinstance(data, dict) or set(data) != {"explanation"} or not isinstance(data["explanation"], str) or not 1 <= len(data["explanation"]) <= 2000:
             raise ValueError("Invalid model diagnosis")
         explanation, provenance = data["explanation"], "nebius_model_assisted_catalogue"
     return db.save_repair(run_id, {"kind": kind, "before": spec.policy.model_dump(), "after": new.model_dump(),
@@ -87,9 +88,9 @@ def compare(db, repair_id, trials=1):
         raise ValueError("Use one to three trials")
     if spec.mode == "live":
         settings = Settings.load()
-        per_call = 24000 * settings.input_rate + settings.max_tokens * settings.output_rate
-        upper = int(per_call * spec.limits.model_turns * 2 * trials * 2)
-        if db.budget()["accounted_usd"] * 1e6 + upper > settings.cap_usd * 1e6:
+        per_call = math.ceil(24000 * settings.input_rate + settings.max_tokens * settings.output_rate)
+        upper = per_call * spec.limits.model_turns * 2 * trials * 2
+        if db.budget(include_attempts=False)["accounted_micros"] + upper > int(settings.cap_usd * 1_000_000):
             raise ValueError("Comparison projected maximum exceeds remaining allowance; reduce trials or configure a verified allowance")
     comparison_id = uuid.uuid4().hex
     pairs = []
@@ -97,7 +98,8 @@ def compare(db, repair_id, trials=1):
     model = Settings.load().snapshot() if spec.mode == "live" else None
     for trial in range(trials):
         before = uuid.uuid4().hex
-        repaired = spec.model_copy(update={"policy": Policy.model_validate(repair["payload"]["after"]), "agent_version": spec.agent_version + "+repair"})
+        repaired_version = spec.agent_version[:80] + "+repair-" + digest(repair["payload"]["after"])[:8]
+        repaired = spec.model_copy(update={"policy": Policy.model_validate(repair["payload"]["after"]), "agent_version": repaired_version})
         after = uuid.uuid4().hex
         snapshots.extend([(before, freeze(spec, model)), (after, freeze(repaired, model))])
         pairs.append({"trial": trial + 1, "before": before, "after": after})
@@ -108,4 +110,4 @@ def compare(db, repair_id, trials=1):
 
 def results(db):
     from .reporting import report
-    return report(db)
+    return report(db, include_attempts=False)

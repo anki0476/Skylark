@@ -124,10 +124,11 @@ class Nebius:
             return {"message": data, "usage": details}
 
 
-def readiness(db=None):
+def readiness(db=None, *, budget=None):
     try:
         settings = Settings.load()
-        if db is not None and db.budget()["unresolved_anomalies"]:
+        summary = budget if budget is not None else db.budget(include_attempts=False) if db is not None else None
+        if summary is not None and summary["unresolved_anomalies"]:
             return {"enabled": False, "reason": "Spending paused after an underestimated charge. Verify pricing and resolve the usage anomaly through the CLI.", "key_configured": True}
         return {"enabled": True, "model": settings.model, "allowance_usd": float(settings.cap_usd), "notice": "Configured locally; capability and credit balance still require verification."}
     except ValueError as exc:

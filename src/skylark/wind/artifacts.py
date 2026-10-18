@@ -4,9 +4,8 @@ import json
 import zipfile
 import tempfile
 from pathlib import Path
-from .domain import RunSpec, Final, canonical, digest, TOOL_SCHEMAS, VERIFIER_VERSION
-from .sandbox import Sandbox
-from .verifier import verify
+from .domain import canonical
+from .replay import replay_record
 from .privacy import redact
 
 MAX_BUNDLE = 10_000_000
@@ -94,56 +93,4 @@ def replay_zip(path):
 
 def replay_members(members):
     run, events = validate_members(members)
-    snapshot = run["snapshot"]
-    if snapshot["tool_schema_hash"] != digest(TOOL_SCHEMAS) or snapshot["verifier_version"] != VERIFIER_VERSION:
-        raise ValueError("Tool or verifier version changed")
-    if run["status"] != "completed":
-        raise ValueError("Incomplete evidence cannot be replayed as a complete regression")
-    spec = RunSpec.model_validate(snapshot["spec"])
-    if spec.environment_version != "reservation/1":
-        raise ValueError("Custom environment replay requires its trusted adapter; automatic code import is disabled")
-    sim = Sandbox(spec.scenario)
-    if digest(sim.state) != snapshot["initial_state_hash"] or snapshot["fault_schedule"] != spec.scenario.fault.model_dump():
-        raise ValueError("Initial state or fault schedule differs from the frozen snapshot")
-    if not events or events[0]["kind"] != "started" or events[-1]["kind"] != "verification":
-        raise ValueError("Incomplete trace: start and terminal verification are required")
-    if events[-1]["payload"] != run["result"]:
-        raise ValueError("Recorded verification differs from the run result")
-    claims = [e["payload"] for e in events if e["kind"] == "final_claim"]
-    if len(claims) != 1 or claims[0] != run["result"].get("final"):
-        raise ValueError("Missing or inconsistent structured final claim")
-    sequence = 0
-    triggered = False
-    identities, requested, observed = set(), set(), set()
-    for event in events:
-        if event["sequence"] != sequence + 1 or event["id"] in identities or event["run_id"] != run["id"]:
-            raise ValueError("Incomplete event sequence")
-        identities.add(event["id"])
-        sequence += 1
-        if event["kind"] == "tool_requested":
-            invocation = event["payload"]["invocation_id"]
-            if invocation in requested:
-                raise ValueError("Duplicated tool invocation")
-            requested.add(invocation)
-        if event["kind"] == "tool_observed":
-            payload = event["payload"]
-            invocation = payload["invocation_id"]
-            if invocation not in requested or invocation in observed:
-                raise ValueError("Tool observation has no unique request")
-            observed.add(invocation)
-            if payload.get("result", {}).get("error") == "invalid_tool_or_arguments":
-                continue
-            if payload.get("fault") == "timeout_before_commit":
-                actual = {"error": "not_executed"}
-            else:
-                actual = sim.invoke(payload["name"], payload["arguments"])
-            if actual != payload["authoritative_result"]:
-                raise ValueError("Recorded business effect differs from replay")
-            triggered = triggered or bool(payload.get("fault"))
-    if requested != observed:
-        raise ValueError("Incomplete tool outcomes; exact replay is unavailable")
-    final = Final.model_validate(run["result"]["final"]) if run["result"].get("final") else None
-    result = verify(spec.scenario, sim.state, final, triggered)
-    result["matches_recorded"] = all(result[key] == run["result"].get(key) for key in ("verdict", "assertions", "verifier_version")) and sim.state == run["state"]
-    result["evidence"] = "recorded_regression"
-    return result
+    return replay_record(run, events)

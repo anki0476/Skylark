@@ -198,4 +198,4 @@ def test_sse_drains_events_committed_during_completion_check(db, monkeypatch):
         assert response.text.index('"kind": "verification"') < response.text.index("event: done")
         exported = client.get("/api/v1/results/export")
         assert exported.status_code == 200
-        assert exported.json()["schema_version"] == "skylark-report/1"
+        assert exported.json()["schema_version"] == "skylark-report/2"

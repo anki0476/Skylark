@@ -29,14 +29,10 @@ def distribution(values):
             "min": min(values) if values else None, "max": max(values) if values else None}
 
 
-def report(db, comparison_id=None):
-    protocol = db.get_comparison(comparison_id) if comparison_id else None
-    if comparison_id and not protocol:
-        raise ValueError("Comparison or benchmark not found")
-    rows = [row for row in db.list_runs(None) if not comparison_id or row["comparison_id"] == comparison_id]
-    budget = db.budget()
+def report(db, comparison_id=None, *, include_attempts=True):
+    protocol, rows, usage_rows, budget = db.report_data(comparison_id)
     usage_by_run = {}
-    for attempt in budget["attempts"]:
+    for attempt in usage_rows:
         usage_by_run.setdefault(attempt["run_id"], []).append(attempt)
     groups, attempts = {}, []
     for row in rows:
@@ -82,7 +78,8 @@ def report(db, comparison_id=None):
         group["provider_requests"] += len(usage)
         group["input_tokens"] += sum(u["payload"].get("input_tokens", 0) for u in usage)
         group["output_tokens"] += sum(u["payload"].get("output_tokens", 0) for u in usage)
-        attempts.append({"run_id": row["id"], "group_id": key, "scenario_hash": digest(scenario),
+        if include_attempts:
+            attempts.append({"run_id": row["id"], "group_id": key, "scenario_hash": digest(scenario),
             "execution_status": row["status"], "verdict": verdict, "checks": checks,
             "fault_triggered": result.get("fault_triggered"), "tool_calls": result.get("tool_calls"),
             "elapsed_seconds": result.get("elapsed_seconds"), "accounted_usd": accounted/1e6, "uncertain_usd": uncertain/1e6})
@@ -95,7 +92,8 @@ def report(db, comparison_id=None):
         group["accounted_usd"] = group.pop("accounted_micros") / 1e6
         group["uncertain_usd"] = group.pop("uncertain_micros") / 1e6
         output.append(group)
-    return {"schema_version": "skylark-report/1", "comparison_id": comparison_id,
-            "protocol": protocol["payload"] if protocol else None, "groups": output, "attempts": attempts,
+    return {"schema_version": "skylark-report/2", "comparison_id": comparison_id,
+            "protocol": protocol["payload"] if protocol else None, "groups": output, "detail_level": "full" if include_attempts else "summary",
+            **({"attempts": attempts, "usage_attempts": usage_rows} if include_attempts else {}),
             "notice": NOTICE, "cost_scope": "All provider calls attributed to each run, including any diagnosis; unreported tokens are unknown, not zero-cost.",
-            "budget": budget}
+            "budget": budget, "budget_scope": "Whole local project allowance, including runs outside this report's comparison. Detailed usage_attempts are scoped to the selected comparison."}

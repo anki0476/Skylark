@@ -38,6 +38,10 @@ Execution states: queued, running, completed, failed, infrastructure_failed, can
 
 Playback reads recorded events. Regression replays recorded decisions without a model. Fresh evaluation never caches responses. A changed policy can invalidate a recorded final claim; only fresh agent execution evaluates prompt repairs.
 
+Exact replay reconstructs the complete deterministic tool transcript, including fault placement and responses delivered after safeguards. Stored regression sources must pass that validation before execution. This shares the instrumented context, while the verifier independently checks the final business state; it is not re-execution of a model's decisions.
+
+Migration 0002 indexes queue selection, comparison scopes, usage attribution, and event cursors. Report queries filter and project in SQL within a consistent read snapshot. Budget admission uses integer microdollars and rounds each request upward. Async event streams offload SQLite reads to threads. The UI fetches report summaries on demand and stops polling terminal details.
+
 ## Threat boundaries
 
 - Localhost API, host validation, cross-origin write rejection, payload limits, safe rendering, and CSP.

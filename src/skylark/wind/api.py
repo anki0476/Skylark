@@ -3,7 +3,7 @@ import json
 import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
-from fastapi import FastAPI, HTTPException, Request, Header
+from fastapi import FastAPI, HTTPException, Request, Header, Query
 from fastapi.responses import Response, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field
@@ -72,7 +72,8 @@ def create_app(db: Database, frontend: Path | None = None):
 
     @app.get("/api/v1/status")
     def status():
-        return {"product": "Skylark", "version": "0.2.0", "live": readiness(db), "budget": db.budget(), "scenarios": scenario_catalog(), "scope": "Local controlled beta. No production-scale claim."}
+        budget = db.budget(include_attempts=False)
+        return {"product": "Skylark", "version": "0.2.0", "live": readiness(db, budget=budget), "budget": budget, "queue": db.queue_summary(), "scenarios": scenario_catalog(), "scope": "Local controlled beta. No production-scale claim."}
 
     @app.get("/api/v1/runs")
     def list_runs():
@@ -89,21 +90,29 @@ def create_app(db: Database, frontend: Path | None = None):
         return require(run_id)
 
     @app.get("/api/v1/runs/{run_id}/events")
-    async def get_events(run_id: str, request: Request, after: int = 0, stream: bool = False):
-        require(run_id)
-        cursor = max(after, int(request.headers.get("last-event-id", "0")))
+    async def get_events(run_id: str, request: Request, after: int = Query(default=0, ge=0, le=2**63-1), stream: bool = False):
+        if not await asyncio.to_thread(db.execution_state, run_id):
+            raise HTTPException(404, "Run not found")
+        try:
+            last_id = int(request.headers.get("last-event-id", "0"))
+            if not 0 <= last_id <= 2**63-1:
+                raise ValueError()
+        except ValueError:
+            raise ValueError("Last-Event-ID must be a nonnegative 64-bit integer") from None
+        cursor = max(after, last_id)
         if not stream:
-            return db.read_events(run_id, cursor)
+            return await asyncio.to_thread(db.read_events, run_id, cursor)
         async def iterate():
             nonlocal cursor
             while not await request.is_disconnected():
-                for event in db.read_events(run_id, cursor):
+                for event in await asyncio.to_thread(db.read_events, run_id, cursor):
                     cursor = event["sequence"]
                     yield f"id: {cursor}\ndata: {json.dumps(event)}\n\n"
-                if db.get(run_id)["status"] not in ("queued", "running"):
+                state = await asyncio.to_thread(db.execution_state, run_id)
+                if not state or state["status"] not in ("queued", "running"):
                     # Completion can commit between the event read and status read.
                     # Drain the terminal events before closing the stream.
-                    for event in db.read_events(run_id, cursor):
+                    for event in await asyncio.to_thread(db.read_events, run_id, cursor):
                         cursor = event["sequence"]
                         yield f"id: {cursor}\ndata: {json.dumps(event)}\n\n"
                     yield "event: done\ndata: {}\n\n"

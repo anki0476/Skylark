@@ -48,7 +48,9 @@ class Context:
         self.calls, self.eligible, self.fault_triggered = 0, 0, False
 
     def check(self):
-        row = self.db.get(self.run_id)
+        row = self.db.execution_state(self.run_id)
+        if row is None:
+            raise LeaseLost("Execution record unavailable")
         if row["cancel_requested"]:
             raise Cancelled("Cancellation requested; completed side effects are preserved")
         if time.monotonic() - self.started >= self.spec.limits.deadline_seconds:
@@ -182,27 +184,36 @@ def run_live(context, settings, provider_factory=Nebius):
                 arguments = json.loads(fn.get("arguments", ""))
                 if not isinstance(arguments, dict):
                     raise ValueError()
-                if fn.get("name") == "finish":
-                    if len(calls) != 1:
-                        raise ValueError("Finish must be separate from side effects")
+            except (ValueError, TypeError):
+                # Route invalid arguments through the same journal and limits.
+                # Never catch execution/persistence errors as argument mistakes.
+                arguments = fn.get("arguments", "")
+            if fn.get("name") == "finish":
+                try:
                     return Final.model_validate(arguments)
+                except ValidationError:
+                    observed = {"error": "invalid_tool_or_arguments"}
+            else:
                 observed = context.call(fn.get("name", ""), arguments)
-            except (ValueError, ValidationError):
+            if observed.get("error") == "invalid_tool_or_arguments":
                 corrections += 1
                 if corrections > 1:
                     raise Stopped("Repeated invalid tool arguments or final result")
-                observed = {"error": "invalid_arguments", "instruction": "Correct the schema; do not invent a successful outcome."}
             messages.append({"role": "tool", "tool_call_id": call.get("id", str(index)), "content": json.dumps(observed)})
     raise Stopped("Model-turn limit reached without a final result")
 
 
 def run_regression(context):
+    from .replay import replay_record
     source = context.db.get(context.spec.source_run_id)
     if not source or source["status"] != "completed" or not source["result"]:
         raise ValueError("Regression requires a completed, intact source run")
     if source["snapshot"]["spec"]["scenario"] != context.spec.scenario.model_dump():
         raise ValueError("Regression scenario differs from its recorded source")
-    decisions = [e for e in context.db.read_events(source["id"]) if e["kind"] == "tool_requested" and e["payload"].get("origin") == "agent"]
+    events = context.db.read_events(source["id"])
+    if not replay_record(source, events)["matches_recorded"]:
+        raise ValueError("Source regression evidence failed deterministic validation")
+    decisions = [e for e in events if e["kind"] == "tool_requested" and e["payload"].get("origin") == "agent"]
     for decision in decisions:
         context.call(decision["payload"]["name"], decision["payload"]["arguments"])
     final = source["result"].get("final")

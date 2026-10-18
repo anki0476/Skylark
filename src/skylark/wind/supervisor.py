@@ -60,7 +60,7 @@ def supervise_once(db, adapter_path=None, adapter_name=None, run_id=None, parent
             if not db.heartbeat(owner):
                 process.terminate()
                 break
-            current = db.get(ident)
+            current = db.execution_state(ident)
             if current["status"] != "running":
                 break
             if current["cancel_requested"]:
@@ -77,7 +77,7 @@ def supervise_once(db, adapter_path=None, adapter_name=None, run_id=None, parent
             time.sleep(.5)
     finally:
         stop_process(process)
-        current = db.get(ident)
+        current = db.execution_state(ident)
         if current["status"] == "running":
             try:
                 db.finish(ident, owner, status or "interrupted", {"verdict":"inconclusive", "assertions":[], "evidence":"incomplete_execution"},

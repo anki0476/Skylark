@@ -8,7 +8,7 @@ React workbench; local FastAPI API; SQLAlchemy/SQLite WAL and Alembic; durable r
 
 ## Verified
 
-All 156 Python tests passed: 98 agent-lab/provider/hardening/operations tests and 58 retained robotics tests. Four Playwright tests passed: complete fixture/repair/export/refresh workflow, narrow-screen layout, polling without SSE or a recent-history entry, and settings keyboard focus. TypeScript and the Vite production build succeeded. The clean virtual environment installed the final wheel and reproduced all five fault/control conditions under both configurations, replayed their bundles, passed an exported pytest regression, and preserved the same evidence through backup/restore. The installed CLI also completed the supplied adapter through its supervised process. `pip check` found no broken requirements. A Starlette warning recommends migrating its test client from HTTPX to HTTPX2; the locked test environment passes.
+All 178 Python tests passed: 120 agent-lab/provider/hardening/operations/review tests and 58 retained robotics tests. Seven Playwright tests passed: complete fixture/repair/export/refresh workflow, narrow-screen layout, polling without SSE or a recent-history entry, settings keyboard focus, on-demand reports and terminal polling shutdown, idempotent retry after a lost submission response, and readable validation errors. TypeScript and the Vite production build succeeded. The clean virtual environment installed the final wheel and reproduced all five fault/control conditions under both configurations, replayed their bundles, passed an exported pytest regression, and preserved the same evidence through backup/restore. The installed CLI also completed the supplied adapter through its supervised process in the previous release check. `pip check` found no broken requirements. A Starlette warning recommends migrating its test client from HTTPX to HTTPX2; the locked test environment passes.
 
 ## Additional hardening
 
@@ -24,6 +24,9 @@ All 156 Python tests passed: 98 agent-lab/provider/hardening/operations tests an
 - Snapshot SQLite consistently; verify hashes/schema/integrity; restore with pending jobs suspended and block incomplete restores. Private backups remain excluded from release archives.
 - Retry only SQLite startup lock contention within a bounded window; cache deterministic ZIPs under their content hash to avoid replacing a concurrently opened export.
 - Restrict the demo CLI to its own queued run.
+- Validate the whole tool transcript and regression source, fix live-batch decimal arithmetic and per-request rounding, and distinguish internal tool failures from bad arguments.
+- Add indexed, scoped report queries, SQL budget aggregation, nonblocking event reads, on-demand report summaries, and bounded reconnect cursors. Reports now use `skylark-report/2`.
+- Preserve a run submission's identity when retrying a lost response; show field-level errors and bound repaired agent-version names. See the [end-to-end review](review-2026-10-18.md).
 
 ## Remaining gates
 

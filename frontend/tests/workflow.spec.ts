@@ -70,3 +70,54 @@ test('narrow-screen layout and local setup',async({page})=>{
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);
  expect(overflow).toBeFalsy();
 });
+
+test('reports load on demand and completed incidents stop polling',async({page})=>{
+ let reports=0,incidentReads=0;
+ page.on('request',request=>{
+  if(new URL(request.url()).pathname==='/api/v1/results')reports++;
+  if(/\/runs\/[^/]+(?:\/events)?$/.test(new URL(request.url()).pathname)&&request.method()==='GET')incidentReads++;
+ });
+ await page.goto('/');
+ await expect(page.getByRole('button',{name:'Run fixture'})).toBeEnabled();
+ expect(reports).toBe(0);
+ await page.getByRole('button',{name:'Run fixture'}).click();
+ await expect(page.getByRole('button',{name:'Propose repair'})).toBeEnabled({timeout:60000});
+ await expect(page.getByText('verification',{exact:true})).toBeVisible();
+ // Allow the terminal drain to finish, then observe a former polling interval.
+ await page.waitForTimeout(500);
+ const completedReads=incidentReads;
+ await page.waitForTimeout(2500);
+ expect(incidentReads).toBe(completedReads);
+ expect(reports).toBe(0);
+ await page.getByRole('button',{name:'Results',exact:true}).click();
+ await expect(page.getByText('Accurate report',{exact:true}).first()).toBeVisible();
+ expect(reports).toBeGreaterThan(0);
+});
+
+test('retrying a lost submission response reuses its experiment identity',async({page})=>{
+ const keys:string[]=[];
+ let createdId='';
+ await page.route('**/api/v1/runs',async route=>{
+  if(route.request().method()!=='POST'){await route.continue();return}
+  keys.push(route.request().headers()['idempotency-key']);
+  const response=await route.fetch();
+  const result=await response.json();
+  if(keys.length===1){createdId=result.id;await route.abort('failed')}
+  else{expect(result.id).toBe(createdId);await route.fulfill({response})}
+ });
+ await page.goto('/');
+ await page.getByRole('button',{name:'Run fixture'}).click();
+ await expect(page.getByRole('alert')).toBeVisible();
+ await expect(page.getByRole('button',{name:'Run fixture'})).toBeEnabled({timeout:60000});
+ await page.getByRole('button',{name:'Run fixture'}).click();
+ await expect(page.getByRole('heading',{name:'Inside the incident'})).toBeVisible();
+ expect(keys).toHaveLength(2);expect(keys[0]).toBe(keys[1]);
+});
+
+test('validation errors explain the invalid field',async({page})=>{
+ await page.goto('/');
+ await page.getByLabel('Resource',{exact:true}).fill('INVALID RESOURCE');
+ await page.getByRole('button',{name:'Run fixture'}).click();
+ await expect(page.getByRole('alert')).toContainText('scenario.resource');
+ await expect(page.getByRole('alert')).not.toContainText('[object Object]');
+});

@@ -6,7 +6,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer, Float, Text, select, insert, update, event
+from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer, Float, Text, select, insert, update, event, func, case, or_
 from alembic import command
 from alembic.config import Config
 from .domain import canonical, digest
@@ -115,25 +115,32 @@ class Database:
         with self.engine.connect() as conn:
             return [self.decode(r) for r in conn.execute(select(runs).order_by(runs.c.created.desc()).limit(limit)).mappings()]
 
+    def queue_summary(self):
+        with self.engine.connect() as conn:
+            counts = dict(conn.execute(select(runs.c.status, func.count()).where(runs.c.status.in_(("queued", "running"))).group_by(runs.c.status)).all())
+            return {"queued": counts.get("queued", 0), "running": counts.get("running", 0)}
+
+    def execution_state(self, run_id):
+        with self.engine.connect() as conn:
+            row = conn.execute(select(runs.c.status, runs.c.owner, runs.c.cancel_requested).where(runs.c.id == run_id)).mappings().first()
+            return dict(row) if row else None
+
     def claim(self, owner, adapter_name=None, run_id=None):
-        now = time.time()
         with self.transaction() as conn:
+            now = time.time()
             lease = conn.execute(select(workers).where(workers.c.id == 1)).mappings().first()
             if lease and lease["expires"] > now:
                 return None
             # A stale owner is fenced before any new work. Never retry its uncertain attempt.
             conn.execute(update(runs).where(runs.c.status == "running").values(status="interrupted", updated=now,
                 error="Worker lease expired; no automatic retry. Preserved observations are incomplete.", result=canonical({"verdict": "inconclusive", "assertions": []})))
-            candidates = conn.execute(select(runs).where(runs.c.status == "queued").order_by(runs.c.created)).mappings()
-            row = None
-            for candidate in candidates:
-                spec = json.loads(candidate["snapshot"])["spec"]
-                if run_id and candidate["id"] != run_id:
-                    continue
-                if spec["mode"] == "local_adapter" and spec["agent_version"] != adapter_name:
-                    continue
-                row = candidate
-                break
+            eligible = func.json_extract(runs.c.snapshot, '$.spec.mode') != 'local_adapter'
+            if adapter_name:
+                eligible = or_(eligible, func.json_extract(runs.c.snapshot, '$.spec.agent_version') == adapter_name)
+            query = select(runs).where(runs.c.status == "queued", eligible)
+            if run_id:
+                query = query.where(runs.c.id == run_id)
+            row = conn.execute(query.order_by(runs.c.created, runs.c.id).limit(1)).mappings().first()
             if not row:
                 return None
             if lease:
@@ -248,10 +255,10 @@ class Database:
                 row = self.fenced(conn, run_id, owner)
                 if row["cancel_requested"]:
                     raise BudgetExceeded("Cancellation requested; no provider request sent")
-            rows = list(conn.execute(select(usage)).mappings())
-            if any(json.loads(row["payload"]).get("estimate_exceeded") and not json.loads(row["payload"]).get("anomaly_resolved") for row in rows):
+            summary = self._budget_summary(conn)
+            if summary["unresolved_anomalies"]:
                 raise BudgetExceeded("Spending paused after an underestimated charge. Inspect usage and explicitly resolve the anomaly before another request.")
-            spent = sum(row["accounted_micros"] for row in rows)
+            spent = summary["accounted_micros"]
             if spent + micros > cap:
                 raise BudgetExceeded("Project allowance reached; no provider request sent")
             attempt_id = uuid.uuid4().hex
@@ -272,13 +279,47 @@ class Database:
             conn.execute(update(usage).where(usage.c.id == attempt_id).values(status="reported" if actual_micros is not None else "uncertain",
                 accounted_micros=actual_micros if actual_micros is not None else row["reserved_micros"], payload=canonical(details)))
 
-    def budget(self):
+    @staticmethod
+    def _budget_summary(conn):
+        total, uncertain = conn.execute(select(
+            func.coalesce(func.sum(usage.c.accounted_micros), 0),
+            func.coalesce(func.sum(case((usage.c.status.in_(("reserved", "uncertain")), usage.c.accounted_micros), else_=0)), 0))).one()
+        anomalies = list(conn.execute(select(usage.c.id).where(
+            func.json_extract(usage.c.payload, '$.estimate_exceeded') == 1,
+            func.coalesce(func.json_extract(usage.c.payload, '$.anomaly_resolved'), 0) != 1)).scalars())
+        return {"accounted_micros": total, "uncertain_micros": uncertain, "unresolved_anomalies": anomalies}
+
+    @staticmethod
+    def _public_budget(summary):
+        return {"accounted_usd": summary["accounted_micros"] / 1e6,
+                "uncertain_usd": summary["uncertain_micros"] / 1e6,
+                "accounted_micros": summary["accounted_micros"], "uncertain_micros": summary["uncertain_micros"],
+                "unresolved_anomalies": summary["unresolved_anomalies"]}
+
+    def budget(self, *, include_attempts=True):
         with self.engine.connect() as conn:
-            rows = [self.decode(r) for r in conn.execute(select(usage)).mappings()]
-        return {"accounted_usd": sum(r["accounted_micros"] for r in rows) / 1e6,
-                "uncertain_usd": sum(r["accounted_micros"] for r in rows if r["status"] in ("reserved", "uncertain")) / 1e6,
-                "unresolved_anomalies": [r["id"] for r in rows if r["payload"].get("estimate_exceeded") and not r["payload"].get("anomaly_resolved")],
-                "attempts": rows}
+            conn.exec_driver_sql("BEGIN")  # One consistent read snapshot; no writer lock.
+            result = self._public_budget(self._budget_summary(conn))
+            if include_attempts:
+                result["attempts"] = [self.decode(r) for r in conn.execute(select(usage)).mappings()]
+            return result
+
+    def report_data(self, comparison_id=None):
+        """Read only report columns and scoped usage in one consistent snapshot."""
+        with self.engine.connect() as conn:
+            conn.exec_driver_sql("BEGIN")
+            protocol = self.decode(conn.execute(select(comparisons).where(comparisons.c.id == comparison_id)).mappings().first()) if comparison_id else None
+            if comparison_id and not protocol:
+                raise ValueError("Comparison or benchmark not found")
+            query = select(runs.c.id, runs.c.status, runs.c.snapshot, runs.c.result)
+            usage_query = select(usage)
+            if comparison_id:
+                query = query.where(runs.c.comparison_id == comparison_id)
+                usage_query = usage_query.join(runs, usage.c.run_id == runs.c.id).where(runs.c.comparison_id == comparison_id)
+            rows = [self.decode(r) for r in conn.execute(query.order_by(runs.c.created.desc(), runs.c.id)).mappings()]
+            attempts = [self.decode(r) for r in conn.execute(usage_query).mappings()]
+            budget = self._public_budget(self._budget_summary(conn))
+            return protocol, rows, attempts, budget
 
     def resolve_anomaly(self, attempt_id, evidence):
         if not 8 <= len(evidence.strip()) <= 2000:

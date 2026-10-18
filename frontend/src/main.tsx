@@ -1,37 +1,65 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useState, useRef} from 'react';
 import {createRoot} from 'react-dom/client';
 import {ArrowUpRight, ArrowRight, Play, Check, X, FlaskConical, Activity, GitCompareArrows, ChartNoAxesCombined, Settings, Download, RefreshCw, ShieldCheck, ChevronRight, CircleDot, Square, Wind, Info} from 'lucide-react';
 import './style.css';
+import {api} from './api';
+import {usePolling} from './polling';
 
 type Verdict = {verdict:string; assertions:{name:string;passed:boolean;detail:string}[]; final?:{status:string;reservation_id?:string;explanation:string}; tool_calls?:number; elapsed_seconds?:number; evidence?:string};
 type Run = {id:string;status:string;created:number;error?:string;result?:Verdict;state?:{reservations:Record<string,unknown>[]};snapshot:{spec:{mode:string;scenario:{name:string;fault:{kind:string}};policy:Record<string,unknown>}}};
 type Event = {id:string;sequence:number;kind:string;payload:Record<string,any>};
 type Repair = {id:string;approved:number;payload:{kind:string;before:Record<string,unknown>;after:Record<string,unknown>;explanation:string;provenance:string;limitation:string}};
-type Status = {live:{enabled:boolean;reason?:string;model?:string;allowance_usd?:number};budget:{accounted_usd:number;uncertain_usd:number};scenarios:{kind:string;title:string;description:string}[]};
+type Status = {queue:{queued:number;running:number};live:{enabled:boolean;reason?:string;model?:string;allowance_usd?:number};budget:{accounted_usd:number;uncertain_usd:number};scenarios:{kind:string;title:string;description:string}[]};
 const pretty = (text:string) => text.replaceAll('_',' ');
-async function api(path:string, options:RequestInit={}){const res=await fetch('/api/v1'+path,{...options,headers:{'Content-Type':'application/json',...options.headers}});const data=await res.json();if(!res.ok)throw new Error(data.detail||'Request failed');return data;}
 function Badge({text}:{text:string}){return <span className={'badge '+text}>{pretty(text)}</span>}
 function App(){
  const [page,setPage]=useState('Experiments'),[status,setStatus]=useState<Status>(),[runs,setRuns]=useState<Run[]>([]),[selected,setSelected]=useState(localStorage.getItem('skylark.run')||''),[events,setEvents]=useState<Event[]>([]),[repair,setRepair]=useState<Repair>(),[comparison,setComparison]=useState<{pairs:{before:string;after:string;trial:number}[]}>(),[report,setReport]=useState<any>();
  const [fault,setFault]=useState('timeout_after_commit'),[mode,setMode]=useState('fixture'),[resource,setResource]=useState('studio-a'),[customer,setCustomer]=useState('Alex'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[setup,setSetup]=useState(false),[repairKind,setRepairKind]=useState('runtime');
  const [inspected,setInspected]=useState<Run>();
  const [comparisonRuns,setComparisonRuns]=useState<Run[]>([]);
- const run=inspected?.id===selected?inspected:runs.find(r=>r.id===selected), active=runs.some(r=>['queued','running'].includes(r.status));
- const refresh=async()=>{try{const [s,r,summary]=await Promise.all([api('/status'),api('/runs'),api('/results')]);setStatus(s);setRuns(r);setReport(summary)}catch(e){setError((e as Error).message)}};
- useEffect(()=>{refresh();const timer=setInterval(refresh,2000);return()=>clearInterval(timer)},[]);
+ const startRequest=useRef<{fingerprint:string;key:string;body:string}|undefined>(undefined);
+ const run=inspected?.id===selected?inspected:runs.find(r=>r.id===selected), active=Boolean(status?.queue?.queued||status?.queue?.running);
+ const refresh=async(signal?:AbortSignal)=>{
+  try{const [s,r]=await Promise.all([api('/status',{signal}),api('/runs',{signal})]);if(!signal?.aborted){setStatus(s);setRuns(r)}return s.queue.queued||s.queue.running?2000:10000}
+  catch(e){if(!signal?.aborted)setError((e as Error).message);return 5000}
+ };
+ usePolling(refresh);
+ usePolling(async signal=>{
+  if(page!=='Results')return false;
+  try{const summary=await api('/results',{signal});if(!signal.aborted)setReport(summary)}catch(e){if(!signal.aborted)setError((e as Error).message)}
+  return active?2000:10000;
+ },[page]);
  useEffect(()=>{
-  if(!selected)return;
-  let alive=true,cursor=0;
+  if(!selected||page!=='Incident')return;
+  const controller=new AbortController();
+  let cursor=0,pending=false,finished=false,timer:ReturnType<typeof setTimeout>|undefined;
   setEvents([]);setInspected(undefined);localStorage.setItem('skylark.run',selected);
-  const merge=(items:Event[])=>{if(!alive)return;for(const item of items)cursor=Math.max(cursor,item.sequence);setEvents(old=>Array.from(new Map([...old,...items].map(item=>[item.id,item])).values()).sort((a,b)=>a.sequence-b.sequence))};
-  const poll=async()=>{try{const [items,current]=await Promise.all([api(`/runs/${selected}/events?after=${cursor}`),api(`/runs/${selected}`)]);if(alive){merge(items);setInspected(current)}}catch(e){if(alive)setError((e as Error).message)}};
-  poll();const timer=setInterval(poll,2000);
+  const merge=(items:Event[])=>{if(controller.signal.aborted)return;for(const item of items)cursor=Math.max(cursor,item.sequence);setEvents(old=>Array.from(new Map([...old,...items].map(item=>[item.id,item])).values()).sort((a,b)=>a.sequence-b.sequence))};
   const stream=new EventSource(`/api/v1/runs/${selected}/events?stream=true`);
-  stream.onmessage=e=>{try{merge([JSON.parse(e.data)])}catch{poll()}};
-  stream.onerror=()=>{poll()};
-  stream.addEventListener('done',()=>{stream.close();poll();refresh()});
-  return()=>{alive=false;clearInterval(timer);stream.close()}
- },[selected]);
+  const poll=async()=>{
+   if(controller.signal.aborted||pending||finished||document.hidden)return;
+   clearTimeout(timer);pending=true;
+   try{
+    const [items,current]=await Promise.all([api(`/runs/${selected}/events?after=${cursor}`,{signal:controller.signal}),api(`/runs/${selected}`,{signal:controller.signal})]);
+    if(!controller.signal.aborted){
+     merge(items);setInspected(current);
+     if(!['queued','running'].includes(current.status)){
+      // Read once more after terminal status: completion may have raced the first read.
+      merge(await api(`/runs/${selected}/events?after=${cursor}`,{signal:controller.signal}));
+      finished=true;stream.close();void refresh();
+     }
+    }
+   }catch(e){if(!controller.signal.aborted)setError((e as Error).message)}
+   finally{pending=false;if(!controller.signal.aborted&&!finished)timer=setTimeout(()=>{void poll()},2000)}
+  };
+  void poll();
+  stream.onmessage=e=>{try{merge([JSON.parse(e.data)])}catch{void poll()}};
+  stream.onerror=()=>{void poll()};
+  stream.addEventListener('done',()=>{stream.close();void poll()});
+  const visible=()=>{if(!document.hidden)void poll()};
+  document.addEventListener('visibilitychange',visible);
+  return()=>{controller.abort();clearTimeout(timer);stream.close();document.removeEventListener('visibilitychange',visible)};
+ },[selected,page]);
  useEffect(()=>{
   if(!setup)return;
   const previous=document.activeElement as HTMLElement|null;
@@ -44,14 +72,25 @@ function App(){
   document.addEventListener('keydown',keydown);return()=>{document.removeEventListener('keydown',keydown);previous?.focus()}
  },[setup]);
  useEffect(()=>{const saved=localStorage.getItem('skylark.repair');if(saved)api('/repairs/'+saved).then(setRepair).catch(()=>{});const c=localStorage.getItem('skylark.comparison');if(c)api('/comparisons/'+c).then(x=>setComparison(x.payload)).catch(()=>{})},[]);
- useEffect(()=>{
-  if(!comparison)return;
-  let alive=true;
-  const update=async()=>{try{const rows=await Promise.all(comparison.pairs.flatMap(pair=>[pair.before,pair.after]).map(id=>api('/runs/'+id)));if(alive)setComparisonRuns(rows)}catch(e){if(alive)setError((e as Error).message)}};
-  setComparisonRuns([]);update();const timer=setInterval(update,2000);return()=>{alive=false;clearInterval(timer)}
- },[comparison]);
+ usePolling(async signal=>{
+  if(!comparison||page!=='Repair comparison')return false;
+  try{
+   const rows=await Promise.all(comparison.pairs.flatMap(pair=>[pair.before,pair.after]).map(id=>api('/runs/'+id,{signal})));
+   if(!signal.aborted)setComparisonRuns(rows);
+   return rows.some(row=>['queued','running'].includes(row.status))?2000:false;
+  }catch(e){if(!signal.aborted)setError((e as Error).message);return 5000}
+ },[comparison,page]);
  const action=async(fn:()=>Promise<void>)=>{setBusy(true);setError('');try{await fn();await refresh()}catch(e){setError((e as Error).message)}finally{setBusy(false)}};
- const start=()=>action(async()=>{const scenario=status?.scenarios.find(s=>s.kind===fault);const result=await api('/runs',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({mode,scenario:{name:scenario?.title,resource,customer,intent_id:'intent-'+crypto.randomUUID().slice(0,8),fault:{kind:fault}}})});setSelected(result.id);setPage('Incident')});
+ const start=()=>action(async()=>{
+  const fingerprint=JSON.stringify({mode,fault,resource,customer});
+  if(startRequest.current?.fingerprint!==fingerprint){
+   const scenario=status?.scenarios.find(s=>s.kind===fault);
+   startRequest.current={fingerprint,key:crypto.randomUUID(),body:JSON.stringify({mode,scenario:{name:scenario?.title,resource,customer,intent_id:'intent-'+crypto.randomUUID(),fault:{kind:fault}}})};
+  }
+  const pending=startRequest.current!;
+  const result=await api('/runs',{method:'POST',headers:{'Idempotency-Key':pending.key},body:pending.body});
+  startRequest.current=undefined;setSelected(result.id);setPage('Incident');
+ });
  const diagnose=()=>action(async()=>{const result=await api(`/runs/${selected}/repairs`,{method:'POST',body:JSON.stringify({kind:repairKind})});setRepair(result);setComparison(undefined);localStorage.removeItem('skylark.comparison');localStorage.setItem('skylark.repair',result.id);setPage('Repair comparison')});
  const compare=()=>action(async()=>{if(!repair)return;const approved=await api(`/repairs/${repair.id}/approve`,{method:'POST'});setRepair(approved);const result=await api('/comparisons',{method:'POST',body:JSON.stringify({repair_id:repair.id,trials:1})});setComparison(result);localStorage.setItem('skylark.comparison',result.id)});
  const nav=[{name:'Experiments',icon:FlaskConical},{name:'Incident',icon:Activity},{name:'Repair comparison',icon:GitCompareArrows},{name:'Results',icon:ChartNoAxesCombined}];
@@ -62,8 +101,8 @@ function App(){
  <div className="metric-strip"><div><small>EXECUTION ENVIRONMENT</small><strong><ShieldCheck size={17}/>Local sandbox</strong></div><div><small>MODEL CONNECTION</small><strong>{status?.live.enabled?status.live.model:'Not connected'}<button aria-label="Connection and budget" onClick={()=>setSetup(true)}><ArrowUpRight size={15}/></button></strong></div><div><small>ACCOUNTED API USAGE</small><strong>${status?.budget.accounted_usd.toFixed(4)||'0.0000'}<span>USD</span></strong></div></div>
  <div className="section-title"><div><h2>Start with a failure</h2><p>One reservation agent. Real execution boundaries. Independent checks.</p></div><span className="pill">SANDBOX SCENARIOS</span></div>
  <div className="scenario-grid">{status?.scenarios.slice(0,3).map((s,i)=><button key={s.kind} className={'scenario '+(fault===s.kind?'selected':'')} onClick={()=>setFault(s.kind)}><div className="scenario-top"><span className="scenario-number">0{i+1}</span><span className="radio">{fault===s.kind&&<Check size={12}/>}</span></div><h3>{s.title}</h3><p>{s.description}</p><span className="scenario-link">{pretty(s.kind)}<ArrowUpRight size={15}/></span></button>)}</div>
- <div className="configure"><div className="configure-fields"><label>Execution mode<select value={mode} onChange={e=>setMode(e.target.value)}><option value="fixture">Scripted fixture · $0 API cost</option><option value="live" disabled={!status?.live.enabled}>Fresh model evaluation{!status?.live.enabled?' · connect Nebius first':''}</option></select></label><label>Control / selected fault<select value={fault} onChange={e=>setFault(e.target.value)}>{status?.scenarios.map(s=><option key={s.kind} value={s.kind}>{s.title}</option>)}</select></label><label>Resource<input value={resource} onChange={e=>setResource(e.target.value)} maxLength={40}/></label><label>Customer<input value={customer} onChange={e=>setCustomer(e.target.value)} maxLength={80}/></label></div><div className="launch"><p><Info size={15}/>{mode==='fixture'?'A scripted example tests Skylark itself. It is not evidence of model reliability.':`Fresh calls consume Nebius credits. Project allowance: $${status?.live.allowance_usd}. Unknown charges stay reserved.`}</p><button className="primary" disabled={busy||active} onClick={start}><Play size={15}/>{busy?'Starting…':mode==='fixture'?'Run fixture':'Run fresh evaluation'}<ArrowRight size={16}/></button></div></div>
- <div className="section-title"><div><h2>Recent experiments <span className="count">{runs.length}</span></h2></div><button className="text-button" onClick={refresh}><RefreshCw size={14}/>Refresh</button></div><RunTable runs={runs} open={id=>{setSelected(id);setPage('Incident')}}/>
+ <div className="configure"><div className="configure-fields"><label>Execution mode<select value={mode} onChange={e=>setMode(e.target.value)}><option value="fixture">Scripted fixture · $0 API cost</option><option value="live" disabled={!status?.live.enabled}>Fresh model evaluation{!status?.live.enabled?' · connect Nebius first':''}</option></select></label><label>Control / selected fault<select value={fault} onChange={e=>setFault(e.target.value)}>{status?.scenarios.map(s=><option key={s.kind} value={s.kind}>{s.title}</option>)}</select></label><label>Resource<input value={resource} onChange={e=>setResource(e.target.value)} maxLength={40}/></label><label>Customer<input value={customer} onChange={e=>setCustomer(e.target.value)} maxLength={80}/></label></div><div className="launch"><p><Info size={15}/>{mode==='fixture'?'A scripted example tests Skylark itself. It is not evidence of model reliability.':`Fresh calls consume Nebius credits. Project allowance: $${status?.live.allowance_usd}. Unknown charges stay reserved.`}</p><button className="primary" disabled={busy||active||(mode==='live'&&!status?.live.enabled)} onClick={start}><Play size={15}/>{busy?'Starting…':mode==='fixture'?'Run fixture':'Run fresh evaluation'}<ArrowRight size={16}/></button></div></div>
+ <div className="section-title"><div><h2>Recent experiments <span className="count">{runs.length}</span></h2></div><button className="text-button" onClick={()=>{void refresh()}}><RefreshCw size={14}/>Refresh</button></div><RunTable runs={runs} open={id=>{setSelected(id);setPage('Incident')}}/>
  </>}
  {page==='Incident'&&<><PageTitle kicker="FOLLOW THE EVIDENCE" title="Inside the incident" description="What the agent saw, what the tool did, and what the verifier found."/>{!run?<Empty text="Run an experiment to inspect its timeline."/>:<><div className="run-heading"><div><h2>{run.snapshot.spec.scenario.name}</h2><code>{run.id.slice(0,12)}</code><Badge text={run.snapshot.spec.mode}/></div><div className="actions"><Badge text={run.result?.verdict||run.status}/>{['queued','running'].includes(run.status)?<button className="secondary" onClick={()=>action(async()=>{await api(`/runs/${selected}/cancel`,{method:'POST'})})}><Square size={14}/>Cancel</button>:<a className="secondary" href={`/api/v1/runs/${selected}/bundle`}><Download size={15}/>Export incident</a>}</div></div>{run.error&&<div className="notice">{run.error}</div>}<div className="assertions">{run.result?.assertions.map(a=><div key={a.name} className={'assertion '+(a.passed?'pass':'fail')}><div>{a.passed?<Check size={17}/>:<X size={17}/>}<strong>{pretty(a.name)}</strong></div><p>{a.detail}</p></div>)}</div><div className="incident-grid"><section className="panel"><div className="panel-heading"><h2>Execution timeline</h2><span className="pill">{events.length} EVENTS</span></div><div className="timeline">{events.map(e=><article key={e.id} className={'event '+(e.payload.fault?'fault':'')}><div className="event-dot"><CircleDot size={14}/></div><div className="event-heading"><span>{String(e.sequence).padStart(2,'0')}</span><strong>{e.payload.fault?'Fault delivered':pretty(e.kind)}</strong>{e.payload.name&&<code>{e.payload.name}</code>}</div>{['tool_observed','agent_observed'].includes(e.kind)?<><div className="observation"><small>{e.kind==='agent_observed'?'DELIVERED TO AGENT':'TOOL RESPONSE · BEFORE SAFEGUARDS'}</small><pre>{JSON.stringify(e.payload.result,null,2)}</pre></div>{e.payload.fault&&<div className="truth"><small>AUTHORITATIVE OUTCOME · NOT SHOWN TO AGENT</small><pre>{JSON.stringify(e.payload.authoritative_result,null,2)}</pre></div>}</>:<details><summary>Inspect event</summary><pre>{JSON.stringify(e.payload,null,2)}</pre></details>}</article>)}</div></section><aside className="incident-aside"><section className="panel"><h3>Actual reservations</h3><p className="muted">Independent sandbox state</p>{run.state?.reservations?.length?run.state.reservations.map((r,i)=><div className="reservation" key={i}><strong>{String(r.id)}</strong><span>{String(r.customer)} → {String(r.resource)}</span></div>):<p className="muted">No reservations recorded.</p>}<hr/><h3>Agent's final claim</h3><pre>{JSON.stringify(run.result?.final||{status:'awaiting completion'},null,2)}</pre></section><section className="repair-callout"><ShieldCheck size={24}/><h3>Test a better recovery</h3><p>Review a targeted change. Keep the original incident intact.</p><label className="sr-only" htmlFor="repair-kind">Repair type</label><select id="repair-kind" value={repairKind} onChange={e=>setRepairKind(e.target.value)}><option value="runtime">Runtime safeguards</option><option value="prompt" disabled={run.snapshot.spec.mode!=='live'}>Prompt guidance · live only</option></select><button className="primary" disabled={busy||!['completed','failed'].includes(run.status)} onClick={diagnose}>{busy?'Preparing…':'Propose repair'}<ArrowRight size={15}/></button></section></aside></div></> }</>}
  {page==='Repair comparison'&&<><PageTitle kicker="CHANGE. REPEAT. VERIFY." title="A repair earns its result." description="Review the configuration change, then compare independent runs."/>{!repair?<Empty text="Open a completed incident and propose a repair."/>:<><div className="notice"><Info size={18}/>{repair.payload.explanation}</div><div className="diff-grid"><section className="panel"><small>ORIGINAL CONFIGURATION</small><pre>{JSON.stringify(repair.payload.before,null,2)}</pre></section><section className="panel green-panel"><small>PROPOSED {repair.payload.kind.toUpperCase()} REPAIR</small><pre>{JSON.stringify(repair.payload.after,null,2)}</pre></section></div><div className="launch"><p>{repair.payload.limitation}<br/>Source: {pretty(repair.payload.provenance)}.</p><button className="primary" disabled={busy||active} onClick={compare}><Check size={16}/>{repair.approved?'Run comparison again':'Approve & compare'}</button></div>{comparison&&<><div className="section-title"><h2>Comparison evidence</h2><span className="pill">ONE TRIAL PER VERSION</span></div>{comparison.pairs.map(pair=><div className="diff-grid" key={pair.trial}>{(['before','after'] as const).map(side=>{const r=comparisonRuns.find(x=>x.id===pair[side])||runs.find(x=>x.id===pair[side]);return <section className="panel" key={side}><small>{side==='before'?'ORIGINAL':'REPAIRED'}</small><h2>{r?.result?.verdict?pretty(r.result.verdict):r?.status||'queued'}</h2><Badge text={r?.snapshot.spec.mode||'fixture'}/><p>{r?.result?.tool_calls||'—'} tool calls · {r?.result?.elapsed_seconds?.toFixed(2)||'—'} seconds</p><button className="text-button" onClick={()=>{setSelected(pair[side]);setPage('Incident')}}>Inspect evidence<ArrowRight size={14}/></button></section>})}</div>)}<div className="notice">A runtime safeguard preventing a duplicate is not evidence that the model learned recovery. Fixture comparisons establish harness behavior only.</div></>}</>}</>}
@@ -85,5 +124,5 @@ function ResultsView({report}:{report:any}){
  <details><summary>Uncertainty and execution details</summary><pre>{JSON.stringify({unique_scenarios:g.unique_scenarios,execution:g.execution_statuses,dimensions:g.dimensions,input_tokens:g.input_tokens,output_tokens:g.output_tokens,provider_requests:g.provider_requests},null,2)}</pre></details>
  </section>)}<div className="panel budget-panel"><h2>Usage & uncertainty</h2><p><strong>${report?.budget.accounted_usd.toFixed(4)||'0.0000'}</strong> accounted · <strong>${report?.budget.uncertain_usd.toFixed(4)||'0.0000'}</strong> reserved or unconfirmed</p><p className="muted">{report?.cost_scope} These are local estimates, not the provider balance.</p></div></>
 }
-function RunTable({runs,open}:{runs:Run[];open:(id:string)=>void}){return runs.length?<div className="table-wrap"><table><thead><tr><th>Experiment</th><th>Evidence</th><th>Execution</th><th>Verdict</th><th/></tr></thead><tbody>{runs.map(r=><tr key={r.id}><td><button className="run-name" onClick={()=>open(r.id)}>{r.snapshot.spec.scenario.name}<small>{r.id.slice(0,8)} · {new Date(r.created*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</small></button></td><td><Badge text={r.snapshot.spec.mode}/></td><td>{pretty(r.status)}</td><td><Badge text={r.result?.verdict||'pending'}/></td><td><button aria-label={'Open incident '+r.id.slice(0,8)} className="icon-button" onClick={()=>open(r.id)}><ArrowUpRight size={17}/></button></td></tr>)}</tbody></table></div>:<Empty text="Choose a scenario above to create your first experiment."/>}
+function RunTable({runs,open}:{runs:Run[];open:(id:string)=>void}){return runs.length?<div className="table-wrap"><table><thead><tr><th>Experiment</th><th>Evidence</th><th>Execution</th><th>Verdict</th><th/></tr></thead><tbody>{runs.map(r=><tr key={r.id}><td><button className="run-name" onClick={()=>open(r.id)}>{r.snapshot.spec.scenario.name}<small>{r.id.slice(0,8)} · {new Date(r.created*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</small></button></td><td><Badge text={r.snapshot.spec.mode}/></td><td>{pretty(r.status)}</td><td><Badge text={r.result?.verdict||(['queued','running'].includes(r.status)?'pending':'inconclusive')}/></td><td><button aria-label={'Open incident '+r.id.slice(0,8)} className="icon-button" onClick={()=>open(r.id)}><ArrowUpRight size={17}/></button></td></tr>)}</tbody></table></div>:<Empty text="Choose a scenario above to create your first experiment."/>}
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
