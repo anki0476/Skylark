@@ -72,7 +72,7 @@ def create_app(db: Database, frontend: Path | None = None):
 
     @app.get("/api/v1/status")
     def status():
-        return {"product": "Skylark", "version": "0.2.0", "live": readiness(), "budget": db.budget(), "scenarios": scenario_catalog(), "scope": "Local controlled beta. No production-scale claim."}
+        return {"product": "Skylark", "version": "0.2.0", "live": readiness(db), "budget": db.budget(), "scenarios": scenario_catalog(), "scope": "Local controlled beta. No production-scale claim."}
 
     @app.get("/api/v1/runs")
     def list_runs():

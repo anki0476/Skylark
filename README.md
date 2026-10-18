@@ -15,6 +15,7 @@ Skylark is a local agent reliability lab. Its example reservation agent encounte
 - Nebius tool calling with explicit live enablement, usage reservations, and uncertainty accounting.
 - Fixed development/held-out scenario packs and offline tests.
 - Separate outcome counts, descriptive uncertainty intervals, and downloadable results JSON.
+- Verified local database backups and restores that suspend unfinished work instead of rerunning it.
 
 **Current evidence:** offline fixtures and mocked-provider tests. A fixture intentionally exercises known behavior; it is not a live model result. No NVIDIA model has been selected or evaluated against this project yet. This is a local controlled-beta implementation, not a multi-tenant production service.
 
@@ -51,6 +52,8 @@ Linux/macOS use `python3 -m venv .venv` and `.venv/bin/python`. Run from the rep
 6. Restart Skylark and run a small fresh evaluation. Inspect tool validity, latency, usage, and outcomes before expanding.
 
 SDK retries are disabled. Ambiguous timeouts retain their usage reservation and stop; rate limits permit one bounded retry. The project allowance cannot exceed 60% of confirmed credits. These controls do not replace the provider dashboard or guarantee a provider-enforced spending cap.
+
+A charge above its reserved estimate pauses further inference until the anomaly is inspected and explicitly resolved. See [usage reconciliation and backup recovery](docs/operations.md).
 
 ```powershell
 .\.venv\Scripts\python.exe -m skylark status

@@ -4,10 +4,10 @@ This is lifecycle supervision, NOT isolation for untrusted code.
 """
 import os
 import subprocess
-import sys
 import time
 import uuid
 from .db import LeaseLost
+from .processes import spawn_python, stop_process
 
 
 def parent_alive(pid):
@@ -30,23 +30,33 @@ def parent_alive(pid):
         kernel.CloseHandle(handle)
 
 
-def supervise_once(db, adapter_path=None, adapter_name=None, run_id=None):
+def supervise_once(db, adapter_path=None, adapter_name=None, run_id=None, parent_pid=None):
+    if parent_pid and not parent_alive(parent_pid):
+        return None
     owner = uuid.uuid4().hex
     ident = db.claim(owner, adapter_name=adapter_name, run_id=run_id)
     if not ident:
         return None
     row = db.get(ident)
-    command = [sys.executable, "-m", "skylark", "--data", str(db.directory), "_attempt", ident, owner, "--parent-pid", str(os.getpid())]
+    command = ["-m", "skylark", "--data", str(db.directory), "_attempt", ident, owner, "--parent-pid", str(os.getpid())]
     if adapter_path:
         command.extend(["--adapter-path", str(adapter_path)])
-    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    process = subprocess.Popen(command, creationflags=flags, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        process = spawn_python(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        db.finish(ident, owner, "infrastructure_failed", {"verdict": "inconclusive", "assertions": []},
+                  "Could not launch the attempt process; no automatic retry.")
+        return ident
     started = time.monotonic()
     deadline = row["snapshot"]["spec"]["limits"]["deadline_seconds"]
     status, reason = None, None
     cancel_seen = None
     try:
         while process.poll() is None:
+            if parent_pid and not parent_alive(parent_pid):
+                status, reason = "interrupted", "Server exited; the owned attempt was stopped without replaying uncertain work."
+                process.terminate()
+                break
             if not db.heartbeat(owner):
                 process.terminate()
                 break
@@ -66,11 +76,7 @@ def supervise_once(db, adapter_path=None, adapter_name=None, run_id=None):
                 break
             time.sleep(.5)
     finally:
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=5)
+        stop_process(process)
         current = db.get(ident)
         if current["status"] == "running":
             try:

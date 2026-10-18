@@ -12,6 +12,7 @@ from skylark.wind.service import enqueue
 from skylark.wind.runner import work_once
 from skylark.wind.artifacts import bundle, replay_zip
 from skylark.wind.reporting import report
+from skylark.wind.backup import create_backup, restore_backup
 
 
 def main():
@@ -41,8 +42,17 @@ def main():
             (extracted / name).write_bytes(archive.read(name))
     subprocess.run([sys.executable, "-m", "pytest", "test_incident.py", "-q", "--basetemp", str(root / "pytest-temp")], cwd=extracted, check=True)
     assert db.budget()["accounted_usd"] == 0
+    create_backup(db, root / "backup")
+    recovery = restore_backup(root / "backup", root / "restored")
+    assert recovery["suspended_runs"] == 0
+    restored = Database(root / "restored")
+    try:
+        assert len(restored.list_runs()) == len(checks)
+        assert bundle(restored, ident) == path.read_bytes()
+    finally:
+        restored.engine.dispose()
     (root / "results.json").write_text(json.dumps(report(db), indent=2) + "\n", encoding="utf-8")
-    summary = {"evidence": "offline_scripted_fixtures", "checks": checks, "exported_regression": "passed", "api_spend": 0, "output": str(root)}
+    summary = {"evidence": "offline_scripted_fixtures", "checks": checks, "exported_regression": "passed", "backup_restore": "passed", "api_spend": 0, "output": str(root)}
     (root / "verification.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2))
 

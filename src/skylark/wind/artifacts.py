@@ -30,17 +30,33 @@ def bundle(db, run_id):
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         for name, data in members.items():
-            archive.writestr(name, data)
+            # Stable ZIP metadata makes identical evidence content-addressable.
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, data)
     raw = output.getvalue()
     directory = db.directory / "artifacts"
     directory.mkdir(exist_ok=True)
-    destination = directory / (run_id + ".zip")
-    # Concurrent downloads must not share a temporary pathname.
+    checksum = hashlib.sha256(raw).hexdigest()
+    destination = directory / (run_id + "-" + checksum + ".zip")
+    def existing_matches():
+        if not destination.exists():
+            return False
+        if hashlib.sha256(destination.read_bytes()).hexdigest() != checksum:
+            raise ValueError("Stored artifact failed its content hash; inspect the local data directory")
+        return True
+    if existing_matches():
+        return raw
+    # Immutable names avoid replacing a ZIP another download has open on Windows.
     with tempfile.NamedTemporaryFile(dir=directory, suffix=".tmp", delete=False) as handle:
         temporary = Path(handle.name)
         handle.write(raw)
     try:
-        temporary.replace(destination)
+        try:
+            temporary.rename(destination)
+        except (FileExistsError, PermissionError):
+            if not existing_matches():
+                raise
     finally:
         temporary.unlink(missing_ok=True)
     return raw

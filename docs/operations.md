@@ -6,6 +6,8 @@ This guide covers a trusted local installation, not a hosted service. No command
 
 Run `scripts/start.ps1` from a configured checkout. The server owns a separate queue worker, which supervises one attempt process. Ctrl+C stops the server and its worker. Use a second terminal for CLI commands; run them with the same `--data` directory. A wheel installation can use `skylark serve --frontend PATH_TO_BUILT_UI`.
 
+On Windows, Skylark launches the actual virtual-environment interpreter directly so cancellation terminates the interpreter, not just its launcher. The worker checks that its server remains alive, and the attempt checks that its worker and ownership remain valid. These controls cover Skylark's owned processes; trusted adapters that create their own subprocesses remain responsible for their lifecycle.
+
 The default directory is `data/agent-lab`. Secrets are environment variables, not settings saved in SQLite. `.env` files are not loaded automatically.
 
 ## Interpret an interrupted run
@@ -31,9 +33,28 @@ python -m skylark reconcile USAGE_ATTEMPT_ID 0.0123 --evidence "Provider usage r
 
 Use the usage attempt ID, not the experiment ID. Reconciliation appends an audit record; it does not erase the original reservation. Never enter zero because an HTTP request failed or timed out. If evidence is absent, retain uncertainty and the reservation.
 
+If a reported or reconciled charge exceeds its reserved estimate, Skylark pauses further inference across that data directory. The status screen reports the pause. Inspect the recorded model, prices, token bounds, and provider bill; stop active runs and correct local pricing or implementation as needed. Only then acknowledge the specific anomaly:
+
+```text
+python -m skylark resolve-usage-anomaly USAGE_ATTEMPT_ID --evidence "Verified provider record, pricing, and the reason for the corrected estimate"
+```
+
+This adds an audit record and retains the full charge. It does not increase the allowance, erase uncertain charges, or guarantee the provider's bill. A cancelled or expired worker cannot reserve a new model request.
+
 ## Preserve and recover data
 
-For this local beta, stop the server and worker before copying the whole data directory to a separate backup location. Copy the database, any WAL/SHM files, and artifacts together. Restore into a new directory and launch with `--data RESTORED_PATH`; do not overwrite a running installation. Verify completed run IDs, event sequences, and an exported regression before using the restored data. This procedure is not yet an automated backup service or a measured RPO/RTO commitment.
+Create a private snapshot in a new directory:
+
+```text
+python -m skylark --data data/agent-lab backup data/backups/before-upgrade
+python -m skylark restore data/backups/before-upgrade data/restored-agent-lab
+```
+
+Backup uses SQLite's online backup API for a consistent snapshot, including committed WAL contents. It records a SHA-256 checksum, schema revision, and run count. The snapshot contains unredacted traces and usage records; keep it private. Environment API keys are not copied. Previously generated ZIPs can be exported again from the database.
+
+Restore verifies the manifest and database, refuses an existing destination, suspends queued/running jobs as inconclusive, and clears their worker leases. Completed evidence, recorded effects, and unresolved costs remain preserved. Interrupted restores leave a marker that blocks execution; retry the original backup into another new directory. Do not remove that marker to force startup.
+
+Stop the original installation before launching `python -m skylark --data data/restored-agent-lab serve`. Separate copies do not share budget counters. Verify completed run IDs, event sequences, and an exported regression before using the restored data. The local snapshot limit is 1 GB; this is not a scheduled off-machine backup service or a measured RPO/RTO commitment.
 
 Migrations are serialized at startup. Migration 0001 contains frozen DDL; future schema changes need new Alembic revisions. Before upgrading, back up and run a clean-install check. Old verifier versions remain visible; repairs and exact replay refuse incompatible versions. Reproduce the scenario under the new version to obtain current evidence.
 
@@ -54,7 +75,7 @@ cd ..
 .\.venv\Scripts\python.exe scripts/release_smoke.py
 ```
 
-The release check uses its own new data directory, all five fault/control conditions, both configurations, and an exported pytest regression. It spends no API credits. Its output is labeled scripted evidence. GitHub Actions is configured to run offline checks after publication; a local run is not evidence that hosted CI has run.
+The release check uses its own new data directory, all five fault/control conditions, both configurations, an exported pytest regression, and backup/restore verification. It spends no API credits. Its output is labeled scripted evidence. GitHub Actions is configured to run offline checks after publication; a local run is not evidence that hosted CI has run.
 
 ## Escalation boundaries
 

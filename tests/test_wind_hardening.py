@@ -55,7 +55,10 @@ def test_frozen_migration_does_not_import_future_schema(tmp_path):
 
 
 def test_concurrent_initialization_and_duplicate_submission(tmp_path):
+    import threading
+    ready = threading.Barrier(4)
     def initialize(_):
+        ready.wait(timeout=10)
         database = Database(tmp_path / "shared")
         ident = enqueue(database, RunSpec(), "same-run-key")
         database.engine.dispose()
@@ -69,10 +72,21 @@ def test_concurrent_exports_are_complete(db, tmp_path):
     ident = finished(db)
     with ThreadPoolExecutor(max_workers=4) as pool:
         bundles = list(pool.map(lambda _: bundle(db, ident), range(8)))
+    assert len(set(bundles)) == 1
+    assert len(list((db.directory / 'artifacts').glob('*.zip'))) == 1
     for index, data in enumerate(bundles):
         destination = tmp_path / f"incident-{index}.zip"
         destination.write_bytes(data)
         assert replay_zip(destination)["matches_recorded"]
+
+
+def test_corrupt_stored_artifact_is_visible(db):
+    ident = finished(db)
+    bundle(db, ident)
+    saved = next((db.directory / 'artifacts').glob('*.zip'))
+    saved.write_bytes(b'corrupt')
+    with pytest.raises(ValueError, match='content hash'):
+        bundle(db, ident)
 
 
 @pytest.mark.parametrize("remove_kind", ["verification", "final_claim", "tool_observed"])

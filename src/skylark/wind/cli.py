@@ -3,8 +3,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import subprocess
-import sys
 import time
 import uuid
 from decimal import Decimal
@@ -26,6 +24,7 @@ def main():
     serve.add_argument("--frontend", type=Path, default=Path("frontend/dist"), help="Directory containing the built interface")
     worker = sub.add_parser("worker")
     worker.add_argument("--once", action="store_true")
+    worker.add_argument("--parent-pid", type=int, help=argparse.SUPPRESS)
     demo = sub.add_parser("demo")
     demo.add_argument("--fault", choices=["none", "timeout_after_commit", "timeout_before_commit", "stale_read", "incomplete_response"], default="timeout_after_commit")
     demo.add_argument("--repaired", action="store_true")
@@ -43,6 +42,14 @@ def main():
     reconcile.add_argument("attempt_id")
     reconcile.add_argument("confirmed_usd", type=Decimal)
     reconcile.add_argument("--evidence", required=True)
+    anomaly = sub.add_parser("resolve-usage-anomaly", help="Acknowledge verified pricing after an underestimated charge")
+    anomaly.add_argument("attempt_id")
+    anomaly.add_argument("--evidence", required=True)
+    backup = sub.add_parser("backup", help="Create a private, consistent local database snapshot")
+    backup.add_argument("destination", type=Path)
+    restore = sub.add_parser("restore", help="Restore to a NEW directory with pending jobs suspended")
+    restore.add_argument("source", type=Path)
+    restore.add_argument("destination", type=Path)
     sub.add_parser("models")
     benchmark = sub.add_parser("benchmark")
     benchmark.add_argument("--mode", choices=["fixture","live"], default="fixture")
@@ -57,6 +64,10 @@ def main():
     attempt.add_argument("--adapter-path", type=Path)
     attempt.add_argument("--parent-pid", type=int)
     args = parser.parse_args()
+    if args.command == "restore":
+        from .backup import restore_backup
+        print(json.dumps(restore_backup(args.source, args.destination), indent=2))
+        return
     if args.command == "replay":
         from .artifacts import replay_zip
         print(json.dumps(replay_zip(args.bundle), indent=2))
@@ -74,7 +85,7 @@ def main():
         return
     db = Database(args.data)
     if args.command == "status":
-        print(json.dumps({"product": "Skylark Agent Lab", "live": readiness(), "budget": db.budget(), "database": str(db.path)}, indent=2))
+        print(json.dumps({"product": "Skylark Agent Lab", "live": readiness(db), "budget": db.budget(), "database": str(db.path)}, indent=2))
     elif args.command == "serve":
         from .api import create_app
         import uvicorn
@@ -83,18 +94,18 @@ def main():
             parser.error("Built interface missing. Run npm run build in frontend, or provide --frontend PATH.")
         process = None
         if not args.no_worker:
-            flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-            process = subprocess.Popen([sys.executable, "-m", "skylark", "--data", str(db.directory), "worker"], creationflags=flags)
+            from .processes import spawn_python
+            process = spawn_python(["-m", "skylark", "--data", str(db.directory), "worker", "--parent-pid", str(os.getpid())])
         try:
             uvicorn.run(create_app(db, frontend), host="127.0.0.1", port=args.port, access_log=False)
         finally:
             if process:
-                process.terminate()
-                process.wait(timeout=10)
+                from .processes import stop_process
+                stop_process(process)
     elif args.command == "worker":
-        from .supervisor import supervise_once
-        while True:
-            ident = supervise_once(db)
+        from .supervisor import supervise_once, parent_alive
+        while not args.parent_pid or parent_alive(args.parent_pid):
+            ident = supervise_once(db, parent_pid=args.parent_pid)
             if args.once:
                 break
             if not ident:
@@ -102,8 +113,8 @@ def main():
     elif args.command == "demo":
         policy = Policy(stable_key=args.repaired, reconcile=args.repaired, validate_receipt=args.repaired)
         ident = enqueue(db, RunSpec(scenario=Scenario(fault=Fault(kind=args.fault)), policy=policy), uuid.uuid4().hex)
-        while db.get(ident)["status"] == "queued":
-            if not work_once(db):
+        while db.get(ident)["status"] in ("queued", "running"):
+            if not work_once(db, run_id=ident):
                 time.sleep(.2)
         print(json.dumps(db.get(ident), indent=2))
     elif args.command == "run":
@@ -151,8 +162,16 @@ def main():
         args.destination.write_bytes(bundle(db, args.run_id))
         print(str(args.destination.resolve()))
     elif args.command == "reconcile":
+        if not args.confirmed_usd.is_finite() or args.confirmed_usd < 0:
+            parser.error("Confirmed charge must be finite and nonnegative")
         db.reconcile(args.attempt_id, int(args.confirmed_usd * 1_000_000), args.evidence)
         print(json.dumps(db.budget(), indent=2))
+    elif args.command == "resolve-usage-anomaly":
+        db.resolve_anomaly(args.attempt_id, args.evidence)
+        print(json.dumps(db.budget(), indent=2))
+    elif args.command == "backup":
+        from .backup import create_backup
+        print(json.dumps(create_backup(db, args.destination), indent=2))
 
 
 if __name__ == "__main__":

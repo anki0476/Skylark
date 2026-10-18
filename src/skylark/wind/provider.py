@@ -43,12 +43,15 @@ class Settings:
 
 
 class Nebius:
-    def __init__(self, db, run_id, settings: Settings, client=None):
+    def __init__(self, db, run_id, settings: Settings, client=None, *, owner=None, purpose="execution"):
         self.db, self.run_id, self.settings = db, run_id, settings
+        self.owner, self.purpose = owner, purpose
         self.client = client or OpenAI(api_key=os.environ["NEBIUS_API_KEY"], base_url="https://api.tokenfactory.nebius.com/v1/", max_retries=0, timeout=30)
 
     def complete(self, messages, tools, remaining=30):
         settings = self.settings
+        if not math.isfinite(remaining) or remaining <= 0:
+            raise ProviderFailure("Model request deadline exhausted; no request sent")
         # UTF-8 bytes plus generous protocol overhead conservatively bound input tokens.
         input_bound = len(canonical({"messages": messages, "tools": tools}).encode()) + 4096
         if input_bound > 24000:
@@ -57,7 +60,9 @@ class Nebius:
         for attempt in range(2):
             if remaining <= 0:
                 raise ProviderFailure("Model request deadline exhausted; no further request sent")
-            ident = self.db.reserve(self.run_id, reservation, int(settings.cap_usd * 1_000_000))
+            ident = self.db.reserve(self.run_id, reservation, int(settings.cap_usd * 1_000_000), owner=self.owner,
+                payload={"model": settings.model, "purpose": self.purpose, "price_configuration": settings.snapshot(),
+                         "input_token_bound": input_bound, "output_token_bound": settings.max_tokens})
             started = time.monotonic()
             try:
                 response = self.client.chat.completions.create(model=settings.model, messages=messages, tools=tools,
@@ -80,31 +85,50 @@ class Nebius:
             except Exception:
                 self.db.settle(ident, None, {"billing": "unconfirmed", "error": "provider_error"})
                 raise ProviderFailure("Provider failed; sensitive response details were not logged") from None
-            counts = response.usage
+            counts = getattr(response, "usage", None)
             cost = None
             details = {"model": settings.model, "latency_seconds": time.monotonic() - started}
-            if counts and counts.prompt_tokens >= 0 and counts.completion_tokens >= 0:
-                cost = math.ceil(counts.prompt_tokens * settings.input_rate + counts.completion_tokens * settings.output_rate)
-                details.update(input_tokens=counts.prompt_tokens, output_tokens=counts.completion_tokens)
+            prompt_tokens, completion_tokens = getattr(counts, "prompt_tokens", None), getattr(counts, "completion_tokens", None)
+            if all(type(value) is int and 0 <= value <= 2**31-1 for value in (prompt_tokens, completion_tokens)):
+                estimate = math.ceil(prompt_tokens * settings.input_rate + completion_tokens * settings.output_rate)
+                if 0 <= estimate <= 2**63-1:
+                    cost = estimate
+                    details.update(input_tokens=prompt_tokens, output_tokens=completion_tokens)
             self.db.settle(ident, cost, details)
             if cost is None:
-                raise ProviderFailure("Provider omitted usage; reservation retained and run stopped")
+                raise ProviderFailure("Provider omitted usage or returned invalid counts; reservation retained and run stopped")
             if cost > reservation:
                 raise ProviderFailure("Reported usage exceeded the reserved estimate; inspect pricing before another run")
-            if not response.choices:
+            if not isinstance(getattr(response, "choices", None), list) or not response.choices:
                 raise ProviderFailure("Provider returned no choices")
             choice = response.choices[0]
-            if choice.finish_reason not in ("stop", "tool_calls"):
+            if getattr(choice, "finish_reason", None) not in ("stop", "tool_calls"):
                 return {"invalid": "truncated_or_refused", "usage": details}
-            message = choice.message
+            message = getattr(choice, "message", None)
             if getattr(message, "refusal", None):
                 return {"invalid": "refused", "usage": details}
-            return {"message": message.model_dump(exclude_none=True), "usage": details}
+            if not callable(getattr(message, "model_dump", None)):
+                return {"invalid": "malformed_message", "usage": details}
+            data = message.model_dump(exclude_none=True)
+            if not isinstance(data, dict):
+                return {"invalid": "malformed_message", "usage": details}
+            calls = data.get("tool_calls", [])
+            if data.get("role") != "assistant" or not isinstance(calls, list) or any(
+                not isinstance(call, dict) or not isinstance(call.get("id"), str) or not call["id"]
+                or not isinstance(call.get("function"), dict)
+                or not isinstance(call["function"].get("name"), str)
+                or not isinstance(call["function"].get("arguments"), str) for call in calls):
+                return {"invalid": "malformed_message", "usage": details}
+            if len({call["id"] for call in calls}) != len(calls):
+                return {"invalid": "duplicate_call_identity", "usage": details}
+            return {"message": data, "usage": details}
 
 
-def readiness():
+def readiness(db=None):
     try:
         settings = Settings.load()
+        if db is not None and db.budget()["unresolved_anomalies"]:
+            return {"enabled": False, "reason": "Spending paused after an underestimated charge. Verify pricing and resolve the usage anomaly through the CLI.", "key_configured": True}
         return {"enabled": True, "model": settings.model, "allowance_usd": float(settings.cap_usd), "notice": "Configured locally; capability and credit balance still require verification."}
     except ValueError as exc:
         return {"enabled": False, "reason": str(exc), "key_configured": bool(os.environ.get("NEBIUS_API_KEY"))}

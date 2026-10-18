@@ -28,7 +28,7 @@ API idempotency prevents duplicate submissions; a worker token fences late write
 
 SQLite uses WAL and atomic claims. One worker lease is active. Heartbeats renew a 20-second lease; expired owners are fenced and their runs marked interrupted. Comparison metadata and jobs commit atomically.
 
-The supervisor launches a bounded attempt process. Cancellation permits a two-second grace period for a cooperative call to checkpoint before stopping the owned process. Timeouts still enforce the attempt deadline, and unconfirmed inference charges remain reserved. A child liveness watchdog exits if its supervisor disappears and never renews the absent parent's lease. This does not prevent trusted Python from creating subprocesses or accessing the machine; hostile code execution is unsupported.
+The supervisor launches a bounded attempt process. Cancellation permits a two-second grace period for a cooperative call to checkpoint before stopping the owned process. Timeouts still enforce the attempt deadline, and unconfirmed inference charges remain reserved. A child liveness watchdog exits if its supervisor disappears or ownership expires; the worker stops when its server disappears. On Windows, the launcher follows [CPython's virtual-environment subprocess mechanism](https://github.com/python/cpython/blob/3.12/Lib/multiprocessing/popen_spawn_win32.py) so the owned handle identifies the interpreter. This does not prevent trusted Python from creating subprocesses or accessing the machine; hostile code execution is unsupported.
 
 Custom adapters are imported through explicit CLI use. General workers skip jobs needing an unavailable adapter. Adapter import itself is trusted local Python.
 
@@ -45,7 +45,11 @@ Playback reads recorded events. Regression replays recorded decisions without a 
 - No API key in browser state, snapshots, logs, or provider error messages.
 - Export redacts known keys, common tokens, sensitive fields, and email addresses. This is best effort, not complete PII detection. Redacted bundles cannot establish exact replay.
 - No pickle or unsafe YAML object loading. ZIP replay reads bounded fixed members without extraction.
-- Integer-microdollar accounting with atomic reservations and evidence-backed reconciliation.
+- Integer-microdollar accounting with atomic reservations, ownership checks, and evidence-backed reconciliation. An underestimated reported charge pauses further inference until explicitly resolved; the original charge remains accounted.
 - Public access, authentication, tenant isolation, arbitrary uploaded code, and production-connected tools are outside the beta.
 
 Do not expose the server through a public tunnel. Complete production gates before shared hosting.
+
+## Local recovery
+
+Backups use [SQLite's online backup API](https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.backup), verify database integrity, and record the schema revision and content hash. Restore into a fresh directory preserves completed evidence but suspends pending executions. An incomplete-restore marker prevents accidental work if restore itself is interrupted. These are private local snapshots, not an off-machine backup service; see the operations guide.
