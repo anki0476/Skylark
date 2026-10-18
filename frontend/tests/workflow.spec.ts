@@ -70,6 +70,8 @@ test('narrow-screen layout and local setup',async({page})=>{
  expect(overflow).toBeFalsy();
  await page.getByRole('button',{name:'About',exact:true}).click();
  await expect(page.getByRole('heading',{name:'About Skylark'})).toBeVisible();
+ await expect(page.getByRole('img',{name:'Choose fault, run agent, inspect incident, review repair, verify and export'})).toBeVisible();
+ await page.screenshot({path:'../.cache/skylark-about-mobile.png',fullPage:true});
  await expect(page.getByRole('heading',{name:'Evidence modes'})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBeFalsy();
  await page.getByRole('button',{name:'Experiments',exact:true}).click();
@@ -177,6 +179,16 @@ test('landing opens the workbench and fits mobile',async({page})=>{
  await expect(page.getByRole('button',{name:'Run fixture'})).toBeVisible();
  await page.reload();
  await expect(page.getByRole('button',{name:'Run fixture'})).toBeVisible();
+});
+
+test('particle renderer loads only when its wordmark approaches the viewport',async({page})=>{
+ const requests:string[]=[];
+ page.on('request',request=>{if(request.url().includes('InteractiveParticles-'))requests.push(request.url())});
+ await page.goto('/');
+ expect(requests).toHaveLength(0);
+ const particleRequest=page.waitForRequest(request=>request.url().includes('InteractiveParticles-'));
+ await page.getByRole('img',{name:'SKYLARK — interactive particle wordmark'}).scrollIntoViewIfNeeded();
+ await particleRequest;
 });
 
 test('landing slideshow, FAQ, and creator credit work',async({page})=>{

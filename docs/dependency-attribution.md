@@ -2,7 +2,7 @@
 
 ## Interface typography
 
-Manrope is bundled locally as a variable font (weights 200–800), under the SIL Open Font License 1.1. Source: [Google Fonts Manrope distribution](https://github.com/google/fonts/tree/main/ofl/manrope). The copyright and full license are preserved in `frontend/src/assets/fonts/OFL-Manrope.txt`. Technical code and identifiers retain the system monospace font.
+Manrope is bundled locally as a variable font (weights 200â€“800), under the SIL Open Font License 1.1. Source: [Google Fonts Manrope distribution](https://github.com/google/fonts/tree/main/ofl/manrope). The copyright and full license are preserved in `frontend/src/assets/fonts/OFL-Manrope.txt`. Technical code and identifiers retain the system monospace font.
 
 ## Agent lab additions
 
@@ -55,3 +55,6 @@ The slideshow, FAQ accordion, and split-flap creator credit are adapted with the
 ## About-page particles
 
 The user-supplied InteractiveParticles component credits Bruno Imbrizi's Codrops Interactive Particles and Ashima / Stefan Gustavson's simplex noise. Those credits remain in the adapted source; confirm the upstream component/shader redistribution terms before public release. Three.js retains its MIT license; GSAP retains its Standard no-charge license (https://gsap.com/standard-license). The SKYLARK source graphic is created locally for this project. Rendering is lazy-loaded on About, capped at 30 fps, stopped offscreen, and replaced with static text for reduced motion or WebGL initialization failure.
+
+- Annotated Text: Componentry registry component (@componentry/annotated-text), adapted to local CSS for the landing headline and About title.
+- Circuit Board: Componentry registry component (@componentry/circuit-board), adapted to SVG and local CSS for the About workflow.

@@ -329,3 +329,49 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .about-wordmark>div{max-width:640px;margin:0 auto}
 .about-wordmark .particle-fallback{font-family:"Arial Black",var(--font-ui);font-size:clamp(28px,6vw,76px);font-weight:900;letter-spacing:-.04em;font-style:italic}
 @media(max-width:800px){.about-wordmark{height:130px}.about-wordmark>div{max-width:460px}}
+/* Half-size footer wordmark; About retains the full treatment. */
+.about-wordmark.wordmark-compact{height:95px;margin-top:32px;border-top:0}
+.about-wordmark.wordmark-compact>div{max-width:320px}
+.about-wordmark.wordmark-compact .particle-fallback{font-size:clamp(14px,3vw,38px)}
+@media(max-width:800px){.about-wordmark.wordmark-compact{height:65px;margin-top:24px}.about-wordmark.wordmark-compact>div{max-width:230px}}
+
+.landing .about-wordmark.wordmark-compact{height:68px;margin-top:20px}
+.landing .handwritten-signature{min-height:0;padding:12px 24px 24px}
+@media(max-width:800px){.landing .about-wordmark.wordmark-compact{height:54px;margin-top:16px}}
+
+/* Componentry Circuit Board, adapted for Skylark's About workflow. */
+.workflow-section h2{margin-bottom:12px}
+.workflow-section>p{max-width:760px}
+.circuit-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain;margin:22px 0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface,#fcfdff)}
+.circuit-scroll:focus-visible{outline:2px solid #7297ee;outline-offset:2px}
+.circuit-board{display:block;width:100%;height:auto;min-width:760px;color:#3967ba}
+.circuit-grid-dot{fill:#aab9d5;opacity:.5}
+.circuit-trace{fill:none;stroke:#a5b9de;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.circuit-pulse,.circuit-pulse-glow{fill:none;stroke:#427ff0;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:13 87;animation:circuit-travel 2.7s linear infinite}
+.circuit-scroll:not(.is-visible) .circuit-pulse,.circuit-scroll:not(.is-visible) .circuit-pulse-glow{animation-play-state:paused}
+.circuit-pulse-glow{stroke-width:6;opacity:.42}
+@keyframes circuit-travel{from{stroke-dashoffset:100}to{stroke-dashoffset:-100}}
+.circuit-node rect{fill:#edf3ff;stroke:#8ba9e1;stroke-width:1.5}
+.circuit-icon{display:flex;width:24px;height:24px;align-items:center;justify-content:center;color:#3868c6}
+.circuit-label{fill:#263753;font-size:13px;font-weight:600;font-family:var(--font-ui),sans-serif}
+.circuit-number{fill:#768aae;font-size:10px;font-family:monospace}
+.workflow-note{font-size:12px}
+@media(max-width:700px){.circuit-board{min-width:0}.circuit-scroll{overflow:hidden}}
+[data-theme="dark"] .circuit-scroll{background:#151e30}
+[data-theme="dark"] .circuit-grid-dot{fill:#7588aa;opacity:.34}
+[data-theme="dark"] .circuit-trace{stroke:#50688d}
+[data-theme="dark"] .circuit-node rect{fill:#223452;stroke:#6e94d8}
+[data-theme="dark"] .circuit-icon{color:#a3bfff}
+[data-theme="dark"] .circuit-label{fill:#dce6f9}
+[data-theme="dark"] .circuit-number{fill:#9aaccc}
+@media(prefers-reduced-motion:reduce){.circuit-pulse,.circuit-pulse-glow{animation:none;stroke-dasharray:none;opacity:.3}}
+/* Componentry annotations, adapted to Skylark's CSS and theme palette. */
+.annotated-text{position:relative;display:inline-block;white-space:nowrap;isolation:isolate}
+.annotation-ink{position:relative;z-index:1}
+.annotation-mark{position:absolute;pointer-events:none;overflow:visible}
+.annotation-crossOut{top:50%;left:-2%;height:1.4em;width:104%;transform:translateY(-50%);color:#cb627d}
+.annotation-highlight{left:-4%;bottom:-.08em;height:1.15em;width:108%;color:#b8a2f04d;z-index:0}
+.annotation-doubleUnderline{bottom:-.34em;left:-1%;height:.48em;width:102%;color:#6288de}
+[data-theme="dark"] .annotation-crossOut{color:#ef91aa}
+[data-theme="dark"] .annotation-highlight{color:#a88bef4d}
+[data-theme="dark"] .annotation-doubleUnderline{color:#8baefa}
