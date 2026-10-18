@@ -1,0 +1,20 @@
+{
+  "credits_and_expiry_checked": false,
+  "automatic_topups_disabled": false,
+  "confirmed_credit_balance_usd": 0,
+  "experiment_limit_usd": 2,
+  "models": [
+    {
+      "model": "REPLACE_WITH_EXACT_PUBLIC_NVIDIA_VISION_MODEL_ID",
+      "public_endpoint_confirmed": false,
+      "image_input_confirmed": false,
+      "input_usd_per_million": 0,
+      "output_usd_per_million": 0,
+      "pricing_source": "REPLACE_WITH_CONSOLE_MODEL_CARD_URL_AND_CHECK_DATE",
+      "response_format": "json_object",
+      "max_output_tokens": 2048,
+      "estimated_input_tokens": 16000,
+      "image_long_edge": 1280
+    }
+  ]
+}

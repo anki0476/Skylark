@@ -1,0 +1,13 @@
+[
+  {
+    "sample_id": "scene-001-clean",
+    "objects": [],
+    "reviewed": false,
+    "all_objects_checked": false,
+    "reviewer": "REPLACE_WITH_REVIEWER_NAME",
+    "source": "manual",
+    "elapsed_seconds": 0,
+    "inference_model": null,
+    "prediction_run_id": null
+  }
+]
