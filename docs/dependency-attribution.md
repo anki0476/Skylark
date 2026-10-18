@@ -1,5 +1,13 @@
 # Dependencies and model attribution
 
+## Agent lab additions
+
+React/React DOM (MIT), Vite (MIT), TypeScript (Apache-2.0), Lucide React (ISC), Playwright (Apache-2.0), SQLAlchemy (MIT), Alembic (MIT), and Hypothesis (MPL-2.0) retain their own licenses. Preserve distribution notices.
+
+No NVIDIA model is bundled or selected yet. Record its identifier, license, provider terms, and contribution after the live capability gate. MIT licensing of our code does not relicense model weights.
+
+The notes below include retained dependencies of the historical robotics prototype.
+
 Skylark's original application code is MIT licensed. Dependencies retain their own
 licenses. The table below records metadata from the installed versions in
 `requirements.lock.txt`; distribution packages include their license texts.

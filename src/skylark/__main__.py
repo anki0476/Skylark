@@ -1,3 +1,3 @@
-from .cli import main
+from .wind.cli import main
 
 raise SystemExit(main())

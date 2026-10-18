@@ -1,3 +1,3 @@
-"""Skylark's local, review-first robotics data pipeline."""
+"""Skylark: reproduce tool failures and verify AI agent recovery."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

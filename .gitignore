@@ -13,4 +13,9 @@ runs/
 dist/
 node_modules/
 *.sqlite3*
+.hypothesis/
+test-results/
+playwright-report/
+*.tsbuildinfo
+build/
 
