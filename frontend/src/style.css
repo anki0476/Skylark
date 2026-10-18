@@ -342,9 +342,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 /* Componentry Circuit Board, adapted for Skylark's About workflow. */
 .workflow-section h2{margin-bottom:12px}
 .workflow-section>p{max-width:760px}
-.circuit-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain;margin:22px 0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface,#fcfdff)}
+.circuit-scroll{width:100%;overflow:hidden;margin:22px 0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface,#fcfdff)}
 .circuit-scroll:focus-visible{outline:2px solid #7297ee;outline-offset:2px}
-.circuit-board{display:block;width:100%;height:auto;min-width:760px;color:#3967ba}
+.circuit-board{display:block;width:100%;height:auto;min-width:0;color:#3967ba}
 .circuit-grid-dot{fill:#aab9d5;opacity:.5}
 .circuit-trace{fill:none;stroke:#a5b9de;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .circuit-pulse,.circuit-pulse-glow{fill:none;stroke:#427ff0;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:13 87;animation:circuit-travel 2.7s linear infinite}
@@ -356,7 +356,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .circuit-label{fill:#263753;font-size:13px;font-weight:600;font-family:var(--font-ui),sans-serif}
 .circuit-number{fill:#768aae;font-size:10px;font-family:monospace}
 .workflow-note{font-size:12px}
-@media(max-width:700px){.circuit-board{min-width:0}.circuit-scroll{overflow:hidden}}
 [data-theme="dark"] .circuit-scroll{background:#151e30}
 [data-theme="dark"] .circuit-grid-dot{fill:#7588aa;opacity:.34}
 [data-theme="dark"] .circuit-trace{stroke:#50688d}

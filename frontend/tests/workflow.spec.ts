@@ -74,6 +74,8 @@ test('narrow-screen layout and local setup',async({page})=>{
  await page.screenshot({path:'../.cache/skylark-about-mobile.png',fullPage:true});
  await expect(page.getByRole('heading',{name:'Evidence modes'})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBeFalsy();
+ await page.setViewportSize({width:1191,height:668});
+ expect(await page.locator('.circuit-scroll').evaluate(element=>element.scrollWidth>element.clientWidth)).toBeFalsy();
  await page.getByRole('button',{name:'Experiments',exact:true}).click();
  await expect(page.getByRole('button',{name:'Run fixture'})).toBeVisible();
 });
