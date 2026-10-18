@@ -1,5 +1,9 @@
 # Dependencies and model attribution
 
+## Interface typography
+
+Manrope is bundled locally as a variable font (weights 200–800), under the SIL Open Font License 1.1. Source: [Google Fonts Manrope distribution](https://github.com/google/fonts/tree/main/ofl/manrope). The copyright and full license are preserved in `frontend/src/assets/fonts/OFL-Manrope.txt`. Technical code and identifiers retain the system monospace font.
+
 ## Agent lab additions
 
 React/React DOM (MIT), Vite (MIT), TypeScript (Apache-2.0), Lucide React (ISC), Playwright (Apache-2.0), SQLAlchemy (MIT), Alembic (MIT), and Hypothesis (MPL-2.0) retain their own licenses. Preserve distribution notices.
@@ -39,3 +43,15 @@ photographs, generated model output, robot simulations, or evidence of detection
 performance. Real photographs remain subject to their owners' permissions. Model
 weights, model outputs, and third-party datasets are not covered by Skylark's MIT
 license.
+
+## Supplied landing component
+
+The landing page adapts the TypingKeyboard React component supplied by the user. Its upstream author and license were not included; confirm redistribution permission before public release. Adaptations remove HTML injection, clean up animation timers, respect reduced motion, and integrate local routing and styling.
+
+## RailSetu landing sections
+
+The slideshow, FAQ accordion, and split-flap creator credit are adapted with the owner's permission from https://github.com/anki0476/RailSetu-v2 (`app/components/intro-carousel.tsx`, `landing-faq.tsx`, and `handwritten-signature.tsx`). Skylark-specific content and scoped styles preserve the existing interface.
+
+## About-page particles
+
+The user-supplied InteractiveParticles component credits Bruno Imbrizi's Codrops Interactive Particles and Ashima / Stefan Gustavson's simplex noise. Those credits remain in the adapted source; confirm the upstream component/shader redistribution terms before public release. Three.js retains its MIT license; GSAP retains its Standard no-charge license (https://gsap.com/standard-license). The SKYLARK source graphic is created locally for this project. Rendering is lazy-loaded on About, capped at 30 fps, stopped offscreen, and replaced with static text for reduced motion or WebGL initialization failure.

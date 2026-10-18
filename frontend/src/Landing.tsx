@@ -1,0 +1,10 @@
+import {useRef} from 'react';
+import IntroCarousel from './IntroCarousel';
+import LandingFaq from './LandingFaq';
+import HandwrittenSignature from './HandwrittenSignature';
+import {ArrowRight} from 'lucide-react';
+import {TypingKeyboard} from './TypingKeyboard';
+export function Landing(){const accountDialog=useRef<HTMLDialogElement>(null);return <div className="landing">
+<header className="landing-header"><a href="#" className="brand"><span className="brand-wordmark">skylark</span><span className="beta">LABS</span></a><button className="secondary landing-account" onClick={()=>accountDialog.current?.showModal()}>Log in / Sign up</button></header>
+<main className="landing-main"><section className="landing-hero"><div className="landing-copy"><span className="landing-kicker">THE AGENT RELIABILITY LAB</span><h1>Tools fail.<br/>Your agent<br/><em>should recover.</em></h1><p>Test the unexpected. Inspect the consequences.<br/>Prove the repair.</p><a className="primary landing-cta pop-button" href="#/app">Open Skylark <ArrowRight size={18}/></a></div><div className="landing-visual" aria-hidden="true"><TypingKeyboard scale={0.85} accentColor="#3b82f6" secondaryAccent="#a855f7" autoTypeText={'$ skylark run\n\nFault: timeout after commit\nReservation: created\nAgent: retrying...\n\nDuplicate detected.\nInspect. Repair. Verify.'}/><span className="visual-caption">FAILURE IS A TEST CASE.</span></div></section>
+<IntroCarousel/><LandingFaq/></main><HandwrittenSignature/><dialog ref={accountDialog} className="modal account-dialog" aria-labelledby="account-title" onClick={e=>{if(e.target===e.currentTarget)accountDialog.current?.close()}}><div><form method="dialog"><button className="close" aria-label="Close account dialog">×</button></form><h2 id="account-title">Log in / Sign up</h2><p>Accounts aren’t available in this local build yet.</p><p>You can use Skylark on this device without an account.</p><a className="primary" href="#/app" onClick={()=>accountDialog.current?.close()}>Continue locally <ArrowRight size={16}/></a></div></dialog></div>}
