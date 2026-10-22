@@ -32,15 +32,33 @@ test('execution mode names distinguish scripted and paid model evaluations',asyn
  await expect(mode.locator('option[value="live"]')).toContainText('Model evaluation · API cost applies');
 });
 
-test('custom booking message is not silently treated as a scripted fixture',async({page})=>{
+test('booking fields define the base task and extra instructions apply only to model evaluations',async({page})=>{
+ await page.route('**/api/v1/status',async route=>{
+  const response=await route.fetch();
+  const status=await response.json();
+  await route.fulfill({response,json:{...status,live:{...status.live,enabled:true}}});
+ });
  await page.goto('/#/app');
  await expect(page.locator('.scenario-grid')).toHaveCount(0);
- const message=page.getByRole('textbox',{name:'Task message'});
+ await expect(page.getByRole('textbox',{name:'Resource to book'})).toHaveValue('studio-a');
+ await expect(page.getByRole('textbox',{name:'Customer name'})).toHaveValue('Alex');
+ await expect(page.getByText('Sandbox item to reserve')).toBeVisible();
+ await expect(page.getByText('Name on the reservation')).toBeVisible();
+ const message=page.getByRole('textbox',{name:'Additional booking instructions'});
+ await expect(message).toBeDisabled();
+ await page.getByLabel('Execution mode').selectOption('live');
+ await expect(message).toBeEnabled();
+ await expect(page.getByText('The base task already asks the agent to make one reservation')).toBeVisible();
  await message.fill('Check the booking outcome before any retry.');
+ await page.getByLabel('Execution mode').selectOption('fixture');
+ await expect(message).toBeDisabled();
+ await expect(message).toHaveValue('Check the booking outcome before any retry.');
  await page.getByRole('button',{name:'Run fixture'}).click();
- await expect(page.getByRole('alert')).toContainText('Custom booking requests require Fresh model evaluation.');
- await message.clear();
- await expect(page.getByRole('button',{name:'Run fixture'})).toBeEnabled();
+ await expect(page.getByRole('heading',{name:'Incident',exact:true})).toBeVisible();
+ await expect(page.getByRole('alert')).toHaveCount(0);
+ await page.setViewportSize({width:390,height:844});
+ await page.locator('.sidebar nav').getByRole('button',{name:'Experiments',exact:true}).click();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBeFalsy();
 });
 
 test('fixture → incident → reviewed repair → comparison → export survives refresh',async({page})=>{
