@@ -442,6 +442,22 @@ def test_redacted_export_disables_exact_replay(db,tmp_path):
         replay_zip(path)
 
 
+def test_nebius_key_in_run_text_is_redacted_without_environment_key(db, tmp_path, monkeypatch):
+    monkeypatch.delenv('NEBIUS_API_KEY', raising=False)
+    synthetic_key = 'v1.' + 'A' * 64 + '.' + 'B' * 64
+    spec = RunSpec(policy=Policy(prompt=f'Check this key: {synthetic_key}'))
+    ident = enqueue(db, spec, 'synthetic-key-redaction')
+    work_once(db)
+    path = tmp_path / 'redacted-token.zip'
+    path.write_bytes(bundle(db, ident))
+    with zipfile.ZipFile(path) as archive:
+        assert synthetic_key.encode() not in archive.read('run.json')
+        assert b'[REDACTED_TOKEN]' in archive.read('run.json')
+        assert json.loads(archive.read('manifest.json'))['redacted']
+    with pytest.raises(ValueError, match='redacted'):
+        replay_zip(path)
+
+
 def test_comparison_is_atomic(db):
     row=execute(db)
     repair=propose(db,row['id'])
