@@ -4,6 +4,7 @@ import re
 
 SENSITIVE_KEYS = re.compile(r"^(authorization|api[_-]?key|password|access[_-]?token|refresh[_-]?token|secret)$", re.I)
 TOKEN = re.compile(r"\b(?:sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9_.-]+)\b")
+NEBIUS_KEY = re.compile(r"\bv1\.[A-Za-z0-9_-]{40,}\.[A-Za-z0-9_-]{40,}\b")
 EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 
 
@@ -27,7 +28,8 @@ def redact(value):
             output = item
             for secret in secrets:
                 output = output.replace(secret, "[REDACTED]")
-            output = EMAIL.sub("[REDACTED_EMAIL]", TOKEN.sub("[REDACTED_TOKEN]", output))
+            output = EMAIL.sub("[REDACTED_EMAIL]", TOKEN.sub("[REDACTED_TOKEN]",
+                NEBIUS_KEY.sub("[REDACTED_TOKEN]", output)))
             changed = changed or output != item
             return output
         return item
