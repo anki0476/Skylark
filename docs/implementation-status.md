@@ -34,7 +34,7 @@ A fresh Python 3.12 virtual environment installed the archive's pinned dependenc
 - Drain terminal SSE events, fall back to polling, and load selected incidents even outside the recent-history limit.
 - Report safety, completion, reporting, coverage, unknowns, execution statuses, token counts, timing, and cost separately. Do not pool incompatible model/verifier versions.
 - Add results export, a portable offline release check, a local archive builder, an operations guide, and an internal submission/video draft.
-- Configure offline GitHub Actions verification; no hosted CI run or publication has occurred.
+- Configure offline GitHub Actions verification. The October 22 branch and PR runs passed on GitHub, and PR #1 was merged into `main`. CI is configured to build and verify a test archive and upload it from a successful `main` push; the repository and test build still need public judge access.
 - Launch the actual Windows virtual-environment interpreter, stop orphaned workers/attempts, and test cancellation, deadlines, and real process termination before and after effect checkpoints.
 - Reject malformed usage/decisions, fence model spending after ownership loss, and pause further inference after an underestimated charge until an audited resolution.
 - Snapshot SQLite consistently; verify hashes/schema/integrity; restore with pending jobs suspended and block incomplete restores. Private backups remain excluded from release archives.

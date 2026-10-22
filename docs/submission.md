@@ -11,6 +11,7 @@ Working-app target: October 25 evening IST. Final evaluation/submission: October
 - [ ] Compare an approved repair with fresh repeated trials and controls.
 - [ ] Publish raw counts, uncertainty, failures, latency, and cost.
 - [ ] Have another person follow the [independent clean-install review](independent-review.md), including an exported regression, and record any blockers.
+- [x] Pass hosted Python, browser, build, and release-smoke checks; PR #1 was merged into `main` on October 22. The workflow is now configured to verify an archive and upload it from a successful `main` push for review.
 - [ ] Publish an MIT-licensed repository with attribution and setup instructions.
 - [ ] Secure free judge access through December 15 and verify live-inference access for that period. The current trial expires beforehand, and the saved preference stops usage at its end.
 - [x] Check track fit against current official rules. Best Apps and Agents is the recommended track for the present Token Factory/Nemotron app; Coding and Agentic Engineering specifically calls for code-writing/testing tools in Token Factory Sandboxes, which Skylark does not use.

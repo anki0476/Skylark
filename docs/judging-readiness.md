@@ -11,4 +11,6 @@ The [official rules](https://nebiusglobalaihackathon.devpost.com/rules) use a pa
 
 The eligibility gate is as important as the four scores: the submission needs a public licensed repository, a working demo/test-build URL, a public YouTube video under three minutes, and free unrestricted judge access through December 15. The current trial ends before judging and is set to stop usage afterward. A credit or hosting arrangement that covers that period remains an external dependency. The local archive is prepared but is not published.
 
+The rules accept a working demo, hosted application, **or test build** and encourage Nebius hosting without requiring it for Best Apps and Agents. Skylark already has a FastAPI backend and SQLite persistence. For this submission, prioritize a reliable local install and complete incident-to-repair experience over adding multi-user authentication or a hosted database. Add those only if a later hosting plan needs separate user data and access control.
+
 Do not present fixtures as model evidence, a one-pair result as a reliability rate, or a runtime guard as model learning. Show both successful and failed runs, and retain denominator, fault coverage, uncertainty, latency, and cost. The small held-out option is explicitly one fixed variant per fault family and one trial; it does not replace the 78-run target.

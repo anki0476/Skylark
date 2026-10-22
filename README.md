@@ -43,7 +43,7 @@ Open **http://127.0.0.1:8000**. The server starts a separate local worker. Choos
 
 PowerShell shortcuts: `./scripts/setup.ps1`, then `./scripts/start.ps1`.
 
-The local test-build archive includes `frontend/dist`. After extracting it, Python dependencies and `pip install -e . --no-deps --no-build-isolation` are sufficient to start the included interface; Node is needed only to rebuild it. Run `python scripts/package_release.py` after a successful build to create `dist/skylark-local-beta.zip`. The script uses explicit source paths and excludes local data, credentials, virtual environments, and Git history. Inspect the archive before public sharing.
+The local test-build archive includes `frontend/dist`. After extracting it, Python dependencies and `pip install -e . --no-deps --no-build-isolation` are sufficient to start the included interface; Node is needed only to rebuild it. Run `python scripts/package_release.py` after a successful build to create `dist/skylark-local-beta.zip`, then run `python scripts/verify_release.py dist/skylark-local-beta.zip` to check its members and hashes. The builder uses explicit source paths and excludes local data, credentials, virtual environments, and Git history. Inspect the archive before public sharing.
 
 For someone new to the project, use the [independent clean-install review](docs/independent-review.md) to check the packaged fixture workflow and a saved evidence replay without an API key.
 
@@ -128,7 +128,7 @@ npm run test:e2e
 
 Browser tests expect the local server on port 8000 and use installed Microsoft Edge. Configure a Playwright-managed Chromium channel on platforms without Edge. Tests require no paid inference.
 
-Run `python scripts/release_smoke.py` for a disposable offline check covering all five conditions, both configurations, bundle replay, and an exported pytest test. Output is clearly labeled scripted evidence. GitHub Actions is configured for Python 3.12, Node 22, and Chromium; hosted CI has not run before repository publication.
+Run `python scripts/release_smoke.py` for a disposable offline check covering all five conditions, both configurations, bundle replay, and an exported pytest test. Output is clearly labeled scripted evidence. GitHub Actions runs Python 3.12, Node 22, Chromium browser checks, release smoke, and archive verification. Successful pushes to `main` are configured to upload a downloadable test-build artifact with 60-day requested retention, subject to repository policy. A workflow artifact in this private repository is a review handoff, not yet a public judge-access URL.
 
 ## Documentation
 
