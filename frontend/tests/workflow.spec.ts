@@ -8,15 +8,57 @@ test.beforeEach(async({page})=>{
  });
 });
 
-test('custom booking message is not silently treated as a scripted fixture',async({page})=>{
+test('workspace switcher shows the available workspace and planned cloud option',async({page})=>{
+ await page.goto('/#/app');
+ const switcher=page.getByRole('button',{name:'Switch workspace. Current: Local workspace'});
+ await switcher.click();
+ await expect(switcher).toHaveAttribute('aria-expanded','true');
+ const workspaces=page.getByRole('group',{name:'Workspaces'});
+ await expect(workspaces.getByRole('button',{name:'Local workspace'})).toHaveAttribute('aria-current','true');
+ await expect(workspaces.getByRole('button',{name:'Cloud workspace Coming soon'})).toBeDisabled();
+ await page.keyboard.press('Escape');
+ await expect(workspaces).toHaveCount(0);
+ await expect(switcher).toBeFocused();
+ await page.setViewportSize({width:390,height:844});
+ await expect(switcher).toBeVisible();
+ await switcher.click();
+ await expect(workspaces).toBeVisible();
+});
+
+test('execution mode names distinguish scripted and paid model evaluations',async({page})=>{
+ await page.goto('/#/app');
+ const mode=page.getByLabel('Execution mode');
+ await expect(mode.locator('option[value="fixture"]')).toHaveText('Scripted evaluation · $0 API cost');
+ await expect(mode.locator('option[value="live"]')).toContainText('Model evaluation · API cost applies');
+});
+
+test('booking fields define the base task and extra instructions apply only to model evaluations',async({page})=>{
+ await page.route('**/api/v1/status',async route=>{
+  const response=await route.fetch();
+  const status=await response.json();
+  await route.fulfill({response,json:{...status,live:{...status.live,enabled:true}}});
+ });
  await page.goto('/#/app');
  await expect(page.locator('.scenario-grid')).toHaveCount(0);
- const message=page.getByRole('textbox',{name:'Task message'});
+ await expect(page.getByRole('textbox',{name:'Resource to book'})).toHaveValue('studio-a');
+ await expect(page.getByRole('textbox',{name:'Customer name'})).toHaveValue('Alex');
+ await expect(page.getByText('Sandbox item to reserve')).toBeVisible();
+ await expect(page.getByText('Name on the reservation')).toBeVisible();
+ const message=page.getByRole('textbox',{name:'Additional booking instructions'});
+ await expect(message).toBeDisabled();
+ await page.getByLabel('Execution mode').selectOption('live');
+ await expect(message).toBeEnabled();
+ await expect(page.getByText('The base task already asks the agent to make one reservation')).toBeVisible();
  await message.fill('Check the booking outcome before any retry.');
+ await page.getByLabel('Execution mode').selectOption('fixture');
+ await expect(message).toBeDisabled();
+ await expect(message).toHaveValue('Check the booking outcome before any retry.');
  await page.getByRole('button',{name:'Run fixture'}).click();
- await expect(page.getByRole('alert')).toContainText('Custom booking requests require Fresh model evaluation.');
- await message.clear();
- await expect(page.getByRole('button',{name:'Run fixture'})).toBeEnabled();
+ await expect(page.getByRole('heading',{name:'Incident',exact:true})).toBeVisible();
+ await expect(page.getByRole('alert')).toHaveCount(0);
+ await page.setViewportSize({width:390,height:844});
+ await page.locator('.sidebar nav').getByRole('button',{name:'Experiments',exact:true}).click();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBeFalsy();
 });
 
 test('fixture → incident → reviewed repair → comparison → export survives refresh',async({page})=>{
@@ -168,7 +210,7 @@ test('retrying a lost submission response reuses its experiment identity',async(
 
 test('validation errors explain the invalid field',async({page})=>{
  await page.goto('/#/app');
- await page.getByLabel('Resource',{exact:true}).fill('INVALID RESOURCE');
+ await page.getByRole('textbox',{name:'Resource to book'}).fill('INVALID RESOURCE');
  await page.getByRole('button',{name:'Run fixture'}).click();
  await expect(page.getByRole('alert')).toContainText('scenario.resource');
  await expect(page.getByRole('alert')).not.toContainText('[object Object]');
@@ -206,7 +248,7 @@ test('settings preferences persist and apply without changing live execution',as
  await dialog.getByLabel('Default customer').fill('Taylor');
  await dialog.getByRole('button',{name:'Done',exact:true}).click();
  await page.reload();
- await expect(page.getByLabel('Customer',{exact:true})).toHaveValue('Taylor');
+ await expect(page.getByRole('textbox',{name:'Customer name'})).toHaveValue('Taylor');
  await expect(page.locator('.shell')).toHaveClass(/no-shine/);
  await expect(page.locator('.shell')).toHaveClass(/compact-tables/);
  await expect(page.getByLabel('Execution mode')).toHaveValue('fixture');
