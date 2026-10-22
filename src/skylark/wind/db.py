@@ -111,9 +111,12 @@ class Database:
         with self.engine.connect() as conn:
             return self.decode(conn.execute(select(runs).where(runs.c.id == run_id)).mappings().first())
 
-    def list_runs(self, limit=100):
+    def list_runs(self, limit=100, comparison_id=None):
         with self.engine.connect() as conn:
-            return [self.decode(r) for r in conn.execute(select(runs).order_by(runs.c.created.desc()).limit(limit)).mappings()]
+            query = select(runs)
+            if comparison_id is not None:
+                query = query.where(runs.c.comparison_id == comparison_id)
+            return [self.decode(r) for r in conn.execute(query.order_by(runs.c.created.desc()).limit(limit)).mappings()]
 
     def queue_summary(self):
         with self.engine.connect() as conn:
@@ -246,6 +249,18 @@ class Database:
     def get_comparison(self, comparison_id):
         with self.engine.connect() as conn:
             return self.decode(conn.execute(select(comparisons).where(comparisons.c.id == comparison_id)).mappings().first())
+
+    def list_benchmarks(self, limit=20):
+        with self.engine.connect() as conn:
+            query = (select(comparisons.c.id, comparisons.c.payload, comparisons.c.created)
+                     .where(func.json_extract(comparisons.c.payload, "$.kind") == "benchmark")
+                     .order_by(comparisons.c.created.desc()).limit(limit))
+            rows = conn.execute(query).mappings()
+            return [{"id": row["id"], "created": row["created"],
+                     "mode": payload["mode"], "split": payload["split"],
+                     "trials": payload["trials"], "run_count": len(payload["runs"]),
+                     "protocol_hash": payload.get("protocol_hash")}
+                    for row in rows for payload in [json.loads(row["payload"])]]
 
     def reserve(self, run_id, micros, cap, *, owner=None, payload=None):
         if type(micros) is not int or type(cap) is not int or not 0 < micros <= 2**63-1 or not 0 < cap <= 2**63-1:

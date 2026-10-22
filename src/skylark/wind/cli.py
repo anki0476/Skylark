@@ -55,6 +55,8 @@ def main():
     benchmark.add_argument("--mode", choices=["fixture","live"], default="fixture")
     benchmark.add_argument("--trials", type=int, choices=[1,2,3], default=3)
     benchmark.add_argument("--split", choices=["development","held_out"], default="development")
+    benchmark.add_argument("--cases-per-fault", type=int, help="Use the first N fixed cases per fault (held-out: 1-4; development: 1)")
+    benchmark.add_argument("--freshness-guard", action="store_true", help="Enable read freshness validation for the repaired configuration")
     report = sub.add_parser("report", help="Export measured counts and uncertainty, without inference")
     report.add_argument("--comparison", help="Restrict to one benchmark/comparison ID")
     report.add_argument("--output", type=Path)
@@ -73,15 +75,19 @@ def main():
         print(json.dumps(replay_zip(args.bundle), indent=2))
         return
     if args.command == "models":
-        from openai import OpenAI
+        from openai import OpenAI, APIStatusError, APIConnectionError
         key = os.environ.get("NEBIUS_API_KEY")
         if not key:
             parser.error("Set NEBIUS_API_KEY locally")
         client = OpenAI(api_key=key, base_url="https://api.tokenfactory.nebius.com/v1/", max_retries=0, timeout=30)
         try:
             print(json.dumps([{"id": m.id, "owned_by": m.owned_by} for m in client.models.list()], indent=2))
+        except APIStatusError as exc:
+            parser.error(f"Model list request returned HTTP {exc.status_code}; check the Token Factory key and project access")
+        except APIConnectionError:
+            parser.error("Could not connect to Token Factory; check the network connection and try again")
         except Exception:
-            parser.error("Could not list models; check local credentials and access")
+            parser.error("Could not list models; check Token Factory service status or try again later")
         return
     db = Database(args.data)
     if args.command == "status":
@@ -124,7 +130,7 @@ def main():
         print(enqueue(db, spec, uuid.uuid4().hex))
     elif args.command == "benchmark":
         from .benchmark import schedule
-        print(json.dumps(schedule(db,args.mode,args.trials,args.split),indent=2))
+        print(json.dumps(schedule(db,args.mode,args.trials,args.split,args.cases_per_fault,args.freshness_guard),indent=2))
     elif args.command == "report":
         from .reporting import report
         text = json.dumps(report(db, args.comparison), indent=2)

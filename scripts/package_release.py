@@ -30,7 +30,7 @@ def main():
             raise ValueError("Disallowed release member")
         members[relative] = path.read_bytes()
     members["RELEASE.json"] = json.dumps({"product": "Skylark local beta", "version": "0.2.0",
-        "evidence": "Offline verification only; live NVIDIA evaluation pending.",
+        "evidence": "Offline verification, exploratory live NVIDIA runs, and a limited 12-attempt live held-out protocol; one execution inconclusive.",
         "files": {name: hashlib.sha256(data).hexdigest() for name, data in sorted(members.items())}}, indent=2).encode()
     destination = ROOT / "dist/skylark-local-beta.zip"
     destination.parent.mkdir(exist_ok=True)

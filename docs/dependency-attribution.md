@@ -8,7 +8,7 @@ Manrope is bundled locally as a variable font (weights 200–800), under the SIL
 
 React/React DOM (MIT), Vite (MIT), TypeScript (Apache-2.0), Lucide React (ISC), Playwright (Apache-2.0), SQLAlchemy (MIT), Alembic (MIT), and Hypothesis (MPL-2.0) retain their own licenses. Preserve distribution notices.
 
-No NVIDIA model is bundled or selected yet. Record its identifier, license, provider terms, and contribution after the live capability gate. MIT licensing of our code does not relicense model weights.
+No NVIDIA model is bundled. Initial live evaluations used `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` through Nebius Token Factory. Verify its model-card license and provider terms before public release. MIT licensing of our code does not relicense model weights.
 
 The notes below include retained dependencies of the historical robotics prototype.
 
@@ -33,9 +33,9 @@ shipped in their distributions. No dependency source is copied into this reposit
 
 The OpenAI SDK is a transport client here; live inference is directed to the
 fixed Nebius Token Factory endpoint. No OpenAI-hosted model is called by Skylark.
-No NVIDIA model has yet been selected or tested live. Once a model is selected,
-record its exact catalog identifier, model-card/license URL, endpoint, pricing
-verification date, and actual contribution in the benchmark report. Do not imply
+The selected model's exact catalog identifier is `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`.
+Record its model-card/license URL, endpoint, pricing verification date, and actual
+contribution in the benchmark report. Do not imply
 that the SDK author or NVIDIA has validated the output.
 
 The supplied geometric fixtures are original software-test assets. They are not

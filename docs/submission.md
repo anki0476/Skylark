@@ -1,16 +1,20 @@
 # Submission checklist
 
-Working-app target: October 25 evening IST. Final evaluation/submission: October 26–29.
+The four official judging criteria and the evidence required for each are mapped in [judging readiness](judging-readiness.md).
 
-- [ ] Verify Nebius access, NVIDIA model capability, and prices.
-- [ ] Observe a genuine live-agent failure, or honestly report passing scenarios.
+Working-app target: October 25 evening IST. Final evaluation/submission: October 26–29. The official deadline is October 30, 2026 at 10:00 a.m. PDT (10:30 p.m. IST); leave time for upload and review. [Official rules](https://nebiusglobalaihackathon.devpost.com/rules).
+
+- [x] Verify local Nebius access and Nemotron Nano tool calling in fresh runs; its [public Nebius listing](https://nebius.com/services/token-factory/models/nvidia-nemotron-models-inference) shows $0.06/$0.24 per million input/output tokens as of October 22. Confirm account-applied billing separately.
+- [x] Check the account's trial balance, remaining trial time, and applied Nemotron Nano rates. The October 22 account check showed trial access ending before the December judging period; do not include private billing details in the public submission.
+- [x] Set post-trial usage to stop; the account confirmed the saved preference and no charges after trial. A separate automatic top-up setting was not found.
+- [x] Observe a genuine live-agent failure, or honestly report passing scenarios. See the [exploratory live evidence](live-evaluation-2026-10-22.md).
 - [ ] Compare an approved repair with fresh repeated trials and controls.
 - [ ] Publish raw counts, uncertainty, failures, latency, and cost.
-- [ ] Have another person reproduce installation and an exported regression.
+- [ ] Have another person follow the [independent clean-install review](independent-review.md), including an exported regression, and record any blockers.
 - [ ] Publish an MIT-licensed repository with attribution and setup instructions.
-- [ ] Verify free judge access through December 15, live-inference access, and credit expiry.
-- [ ] Check track fit against current official rules.
-- [ ] Record a public video under three minutes.
+- [ ] Secure free judge access through December 15 and verify live-inference access for that period. The current trial expires beforehand, and the saved preference stops usage at its end.
+- [x] Check track fit against current official rules. Best Apps and Agents is the recommended track for the present Token Factory/Nemotron app; Coding and Agentic Engineering specifically calls for code-writing/testing tools in Token Factory Sandboxes, which Skylark does not use.
+- [ ] Record a public YouTube video under three minutes.
 
 ## Suggested 150-second demonstration
 

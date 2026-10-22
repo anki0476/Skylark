@@ -46,6 +46,7 @@ class Context:
         self.sandbox = environment or Sandbox(spec.scenario)
         self.started = time.monotonic()
         self.calls, self.eligible, self.fault_triggered = 0, 0, False
+        self.create_attempted = False
 
     def check(self):
         row = self.db.execution_state(self.run_id)
@@ -85,6 +86,10 @@ class Context:
             self.emit("runtime_guard", {"guard": "stable_operation_key", "invocation_id": invocation, "operation_key": args["operation_key"]})
         kind = self.spec.scenario.fault.kind
         eligible = self.sandbox.fault_eligible(kind, name)
+        if policy.validate_freshness and kind == "stale_read" and origin != "agent":
+            # The safeguard's corroborating read must not consume the fault
+            # scheduled for an agent-visible read.
+            eligible = False
         if eligible:
             self.eligible += 1
         trigger = eligible and self.eligible == self.spec.scenario.fault.occurrence and not self.fault_triggered
@@ -122,8 +127,42 @@ class Context:
         if name == "create_reservation" and policy.validate_receipt and observed.get("status") == "completed" and not observed.get("reservation_id"):
             observed = {"error": "invalid_receipt", "outcome": "unknown"}
         if origin == "agent":
+            if name == "create_reservation":
+                self.create_attempted = True
+            elif policy.validate_freshness and self.create_attempted and name in ("check_availability", "get_operation_status"):
+                observed = self.validate_freshness(name, args, observed, invocation)
             self.emit("agent_observed", {"invocation_id": invocation, "name": name, "result": observed})
         return observed
+
+    def validate_freshness(self, name: str, args: dict, observed: dict, invocation: str) -> dict:
+        if observed.get("error"):
+            return observed
+        key = self.spec.scenario.intent_id
+        if name == "get_operation_status" and args["operation_key"] != key:
+            return observed
+        status = self.call("get_operation_status", {"operation_key": key}, origin="runtime_guard")
+        version = status.get("version")
+        if type(version) is not int or status.get("error"):
+            result = {"error": "unverified_freshness", "outcome": "unknown"}
+        elif name == "get_operation_status":
+            if (type(observed.get("version")) is int and observed["version"] >= version
+                    and observed.get("status") == status.get("status")
+                    and observed.get("reservation_id") == status.get("reservation_id")):
+                return observed
+            result = status
+        elif status.get("status") != "completed" or not status.get("reservation_id"):
+            result = {"error": "unverified_freshness", "outcome": "unknown"}
+        elif (type(observed.get("version")) is int and observed["version"] >= version
+              and type(observed.get("available")) is int):
+            return observed
+        else:
+            fresh = self.call("check_availability", {"resource": args["resource"]}, origin="runtime_guard")
+            result = (fresh if type(fresh.get("version")) is int and fresh["version"] >= version
+                      and type(fresh.get("available")) is int else
+                      {"error": "unverified_freshness", "outcome": "unknown"})
+        self.emit("runtime_guard", {"guard": "validated_freshness", "invocation_id": invocation,
+                                    "result": result})
+        return result
 
 
 class FixtureAgent:
@@ -143,9 +182,12 @@ class FixtureAgent:
 
 
 def task_for(spec):
-    return {"resource": spec.scenario.resource, "customer": spec.scenario.customer,
+    task = {"resource": spec.scenario.resource, "customer": spec.scenario.customer,
             "intent_id": spec.scenario.intent_id, "capacity": spec.scenario.capacity,
             "instruction": "Create exactly one reservation for this request and report its actual outcome."}
+    if spec.scenario.task_message.strip():
+        task["additional_request"] = spec.scenario.task_message.strip()
+    return task
 
 
 def run_live(context, settings, provider_factory=Nebius):

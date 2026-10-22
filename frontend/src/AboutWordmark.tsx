@@ -1,7 +1,7 @@
 import {lazy,Suspense,useEffect,useRef,useState} from 'react';
 import source from './assets/skylark-particles.svg';
 const Particles=lazy(()=>import('./InteractiveParticles'));
-export function AboutWordmark({compact=false}:{compact?:boolean}){
+export function AboutWordmark(){
  const host=useRef<HTMLDivElement>(null);
  const [nearViewport,setNearViewport]=useState(false);
  const [reduced,setReduced]=useState(()=>matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -14,5 +14,5 @@ export function AboutWordmark({compact=false}:{compact?:boolean}){
   return()=>observer.disconnect();
  },[]);
  const fallback=<span className="particle-fallback">SKYLARK</span>;
- return <div ref={host} className={compact ? "about-wordmark wordmark-compact" : "about-wordmark"} role="img" aria-label="SKYLARK — interactive particle wordmark"><div aria-hidden="true">{reduced||!nearViewport?fallback:<Suspense fallback={fallback}><Particles src={source} allowUpload={false} background="transparent" color="#7297ee" maxDimension={compact?280:520} size={1.5} randomness={.5} depth={1} touchRadius={.2}/></Suspense>}</div></div>;
+ return <div ref={host} className="about-wordmark" role="img" aria-label="SKYLARK — interactive particle wordmark"><div aria-hidden="true">{reduced||!nearViewport?fallback:<Suspense fallback={fallback}><Particles src={source} allowUpload={false} background="transparent" color="#7297ee" maxDimension={520} size={1.5} randomness={.5} depth={1} touchRadius={.2}/></Suspense>}</div></div>;
 }

@@ -2,7 +2,7 @@
 from copy import deepcopy
 from .domain import RunSpec, Final, digest, TOOL_SCHEMAS, VERIFIER_VERSION
 from .sandbox import Sandbox
-from .verifier import verify
+from .verifier import verify, verify_v2, verify_v3, verify_v4
 
 TOOL_EVENTS = {"tool_requested", "tool_effect", "tool_observed", "agent_observed", "runtime_guard"}
 
@@ -43,7 +43,7 @@ def normalize_invocations(events):
 def replay_record(run, events):
     from .runner import Context
     snapshot = run["snapshot"]
-    if snapshot["tool_schema_hash"] != digest(TOOL_SCHEMAS) or snapshot["verifier_version"] != VERIFIER_VERSION:
+    if snapshot["tool_schema_hash"] != digest(TOOL_SCHEMAS) or snapshot["verifier_version"] not in ("reservation/2", "reservation/3", "reservation/4", VERIFIER_VERSION):
         raise ValueError("Tool or verifier version changed")
     if run["status"] != "completed":
         raise ValueError("Incomplete evidence cannot be replayed as a complete regression")
@@ -77,7 +77,8 @@ def replay_record(run, events):
     if run["result"].get("fault_triggered") != context.fault_triggered or run["result"].get("tool_calls") != context.calls:
         raise ValueError("Recorded fault coverage or call count differs from replay")
     final = Final.model_validate(run["result"]["final"]) if run["result"].get("final") else None
-    result = verify(spec.scenario, sim.state, final, context.fault_triggered)
+    verifier = {"reservation/2": verify_v2, "reservation/3": verify_v3, "reservation/4": verify_v4, VERIFIER_VERSION: verify}[snapshot["verifier_version"]]
+    result = verifier(spec.scenario, sim.state, final, context.fault_triggered)
     result["matches_recorded"] = all(result[key] == run["result"].get(key) for key in ("verdict", "assertions", "verifier_version")) and sim.state == run["state"]
     result["evidence"] = "recorded_regression"
     return result
