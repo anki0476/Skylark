@@ -75,7 +75,7 @@ cd ..
 .\.venv\Scripts\python.exe scripts/release_smoke.py
 ```
 
-The release check uses its own new data directory, all five fault/control conditions, both configurations, an exported pytest regression, and backup/restore verification. It spends no API credits. Its output is labeled scripted evidence. GitHub Actions is configured to run offline checks after publication; a local run is not evidence that hosted CI has run.
+The release check uses its own new data directory, all five fault/control conditions under the original and existing repaired configurations, plus a separate targeted stale-read freshness candidate. It verifies bundle replay, an exported pytest regression, and backup/restore. It spends no API credits. Its output is labeled scripted evidence. GitHub Actions is configured to run offline checks after publication; a local run is not evidence that hosted CI has run.
 
 ## Escalation boundaries
 

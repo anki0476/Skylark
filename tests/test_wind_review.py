@@ -170,7 +170,7 @@ def test_repair_of_maximum_length_version_remains_executable(db):
     assert len(db.get(pair['after'])['snapshot']['spec']['agent_version'])<=100
 
 
-def test_malformed_model_diagnosis_is_a_validation_error(db,monkeypatch):
+def test_live_repair_description_uses_catalogue_without_model_spend(db,monkeypatch):
     settings=Settings('nvidia/mock',Decimal(1),Decimal(3),Decimal(2))
     ident=completed(db)
     snapshot=db.get(ident)['snapshot']
@@ -178,9 +178,10 @@ def test_malformed_model_diagnosis_is_a_validation_error(db,monkeypatch):
     with db.transaction() as connection:
         connection.execute(update(runs).where(runs.c.id==ident).values(snapshot=canonical(snapshot)))
     monkeypatch.setattr(Settings,'load',lambda:settings)
-    monkeypatch.setattr('skylark.wind.service.Nebius',fake_provider([{'name':'explain_repair','arguments':'null'}]))
-    with pytest.raises(ValueError,match='Invalid model diagnosis'):
-        propose(db,ident)
+    proposal=propose(db,ident)
+    assert proposal['payload']['provenance']=='deterministic_catalogue'
+    assert 'Fresh comparison runs are needed' in proposal['payload']['explanation']
+    assert not db.budget()['attempts']
 
 
 def test_batch_projection_rounds_each_request_up(db,monkeypatch):
@@ -191,6 +192,26 @@ def test_batch_projection_rounds_each_request_up(db,monkeypatch):
     with pytest.raises(ValueError,match='exceeds'):
         schedule(db,mode='live',trials=1,split='development')
     assert not db.list_runs() and not db.budget()['attempts']
+
+
+def test_limited_live_held_out_protocol_fits_current_allowance_before_queueing(db,monkeypatch):
+    from skylark.wind.benchmark import schedule
+    configured = Settings('nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B',
+                          Decimal('0.06'), Decimal('0.24'), Decimal('0.50'))
+    monkeypatch.setattr(Settings, 'load', lambda: configured)
+    protocol = schedule(db, mode='live', split='held_out', trials=1,
+                        cases_per_fault=1, freshness_guard=True)
+    assert len(protocol['runs']) == 12
+    assert all(db.get(run_id)['snapshot']['model'] == configured.snapshot()
+               for run_id in protocol['runs'])
+    assert all(db.get(run_id)['snapshot']['spec']['scenario']['task_message']
+               for run_id in protocol['runs'][2:4])
+    monkeypatch.setattr(Settings, 'load', lambda: Settings(
+        configured.model, configured.input_rate, configured.output_rate, Decimal('0.36')))
+    with pytest.raises(ValueError, match='exceeds'):
+        schedule(db, mode='live', split='held_out', trials=1,
+                 cases_per_fault=1, freshness_guard=True)
+    assert len(db.list_runs()) == 12
 
 
 @pytest.mark.parametrize('allowance,permitted',[('.00002',False),('.00004',True)])

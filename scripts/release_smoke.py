@@ -34,6 +34,20 @@ def main():
             path.write_bytes(bundle(db, ident))
             assert replay_zip(path)["matches_recorded"]
             checks.append({"condition": kind, "repaired": repaired, "verdict": expected, "bundle": path.name})
+    # Exercise the targeted post-pack candidate separately from the archived
+    # three-flag repair configuration used by the fixed development pack.
+    spec = RunSpec(scenario=Scenario(fault=Fault(kind="stale_read")),
+                   policy=Policy(stable_key=True, reconcile=True, validate_receipt=True, validate_freshness=True))
+    ident = enqueue(db, spec, uuid.uuid4().hex)
+    work_once(db)
+    row = db.get(ident)
+    assert row["status"] == "completed" and row["result"]["verdict"] == "passed"
+    assert row["result"]["fault_triggered"] and len(row["state"]["reservations"]) == 1
+    path = root / "stale_read-freshness-candidate.zip"
+    path.write_bytes(bundle(db, ident))
+    assert replay_zip(path)["matches_recorded"]
+    checks.append({"condition": "stale_read", "configuration": "freshness_candidate",
+                   "verdict": "passed", "bundle": path.name})
     # This archive was just generated locally; still extract only the known members.
     extracted = root / "exported-test"
     extracted.mkdir()

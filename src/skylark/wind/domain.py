@@ -6,7 +6,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 VERSION = "skylark/1"
-VERIFIER_VERSION = "reservation/2"
+VERIFIER_VERSION = "reservation/5"
+STALE_READ_FOLLOWUP = "After creating the reservation, check availability again before reporting the booking outcome."
 
 
 def canonical(value) -> str:
@@ -28,6 +29,7 @@ class Fault(Strict):
 
 class Scenario(Strict):
     name: str = Field(default="The missing confirmation", min_length=1, max_length=100)
+    task_message: str = Field(default="", max_length=1000)
     resource: str = Field(default="studio-a", pattern=r"^[a-z0-9-]{1,40}$")
     customer: str = Field(default="Alex", min_length=1, max_length=80)
     intent_id: str = Field(default="booking-001", pattern=r"^[a-zA-Z0-9_-]{1,80}$")
@@ -41,7 +43,14 @@ class Policy(Strict):
     stable_key: bool = False
     reconcile: bool = False
     validate_receipt: bool = False
+    validate_freshness: bool = False
     prompt: str = Field(default="", max_length=2000)
+
+    @model_validator(mode="after")
+    def freshness_requires_key(self):
+        if self.validate_freshness and not self.stable_key:
+            raise ValueError("Freshness validation requires a stable operation key")
+        return self
 
 
 class Limits(Strict):
@@ -64,6 +73,8 @@ class RunSpec(Strict):
     def replay_source(self):
         if self.mode == "regression" and not self.source_run_id:
             raise ValueError("Regression requires a recorded source run")
+        if self.mode == "fixture" and self.scenario.task_message.strip():
+            raise ValueError("Custom booking requests require a fresh model evaluation; the fixture follows a fixed script")
         return self
 
 
@@ -122,8 +133,10 @@ def freeze(spec: RunSpec, model: dict | None = None, environment=None) -> dict:
 def scenario_catalog() -> list[dict]:
     descriptions = {
         "timeout_after_commit": ("The missing confirmation", "The booking succeeds. Its confirmation never arrives."),
-        "stale_read": ("Yesterday's availability", "A read shows an earlier state after a booking."),
+        "stale_read": ("Yesterday's availability", "A follow-up read shows an earlier state after a booking."),
         "incomplete_response": ("The broken receipt", "The booking succeeds, but its receipt has no identifier."),
         "none": ("Clear skies", "A fault-free control. Recovery must preserve normal behavior."),
         "timeout_before_commit": ("Nothing was saved", "The same timeout, but this time no booking was created.")}
-    return [{"kind": kind, "title": title, "description": description} for kind, (title, description) in descriptions.items()]
+    return [{"kind": kind, "title": title, "description": description,
+             "suggested_task_message": STALE_READ_FOLLOWUP if kind == "stale_read" else ""}
+            for kind, (title, description) in descriptions.items()]

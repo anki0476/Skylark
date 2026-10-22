@@ -1,6 +1,6 @@
 # Skylark submission draft
 
-**Status: internal draft. Not submitted. Live-model evidence and public URLs remain outstanding.**
+**Status: internal draft. Not submitted. A limited live held-out evaluation is complete; public URLs and judge access remain outstanding.**
 
 ## One-line description
 
@@ -20,7 +20,11 @@ The developer reviews a bounded prompt or runtime change, approves a new configu
 
 React and TypeScript provide the workbench. FastAPI exposes a localhost API. SQLite, SQLAlchemy, and Alembic preserve run snapshots, a durable queue, event sequences, and usage accounting. A separate supervised Python worker enforces execution limits. The instrumented adapter allows trusted local Python agents to participate without uploading their code.
 
-The Nebius integration uses its OpenAI-compatible inference API for agent tool decisions and explanations of supported repairs. The exact NVIDIA model and settings must be filled in after the live capability experiment. No NVIDIA performance result is claimed in this draft.
+The Nebius integration uses its OpenAI-compatible inference API for agent tool decisions. Supported repair descriptions use a deterministic catalogue so that an unverified model explanation cannot misstate the tool outcome. A predeclared live development pack ran `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` with tool calling: 12/12 runs completed, all six fault injections were reached, and both stale-read conditions failed reporting accuracy. In a separate exploratory `/5` stale-read comparison, the fresh original reported stale availability and failed, while the freshness guard refreshed the read and passed. Both saved traces replay exactly. These narrow synthetic observations do not support a general reliability-rate claim.
+
+A later [limited held-out protocol](live-held-out-2026-10-22.md) scheduled 12 live attempts under a frozen scenario and policy hash. Eleven completed and replay exactly; one guarded timeout attempt failed before reaching its fault and is inconclusive. The stale-read and incomplete-response original runs failed accurate reporting while their guarded pairs passed. All six controls passed. The original timeout run also passed, so that pair does not demonstrate an improvement. This one-variant-per-fault result is too small for a reliability rate.
+
+The [evidence packet](evidence/README.md) contains all 12 attempt summaries and bundles; the [recording script](demo-script.md) uses the scoped Results view. Review exports before publication.
 
 ## What is distinctive
 
@@ -28,15 +32,15 @@ Skylark tests observable business consequences at specific call boundaries. It p
 
 ## Engineering evidence
 
-The implemented tests cover duplicate operations, operation-key conflicts, false claims, uncertain billing, worker fencing, cancellation, incomplete traces, concurrent initialization, and concurrent exports. Browser checks cover the main workflow and offline fixture use. Publish the final verified test counts and commit alongside the release; do not infer live model quality from these checks.
+The implemented tests cover duplicate operations, operation-key conflicts, false claims, uncertain billing, worker fencing, cancellation, incomplete traces, concurrent initialization, and concurrent exports. The current local suite passed 195 Python tests, 20 Playwright browser tests on an isolated server with live inference disabled, a production frontend build, and an 11-case offline release smoke check. A fresh virtual environment installed the release archive, passed `pip check`, ran a scripted fault, exported and replayed its incident, replayed a saved live trace without an API key, and served the included interface. This is same-machine verification; independent user testing remains. Publish the final verified test counts and commit alongside the release; do not infer live model quality from these checks.
 
 ## Results to complete before publication
 
-- Exact eligible NVIDIA model, provider settings, rates, and capability-probe outcome.
-- Predeclared protocol ID/hash and scenario/trial counts.
-- Original and repaired safety, completion, reporting, coverage, and infrastructure counts.
-- Known and uncertain spend, latency, and regressions.
+- The account price table confirmed $0.06/$0.24 per million input/output tokens for `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` on October 22. The usage page rounded current Token Factory usage to $0.03; the local ledger is an estimate and not an account invoice. Keep account-specific billing details out of the public submission.
+- Have an independent person reproduce the held-out protocol export and inspect the failed guarded timeout attempt.
+- Verify local spend estimates against provider billing and the unresolved earlier charge.
 - Public repository, downloadable test build, video, and judge-access instructions.
+- Free live-model access for judges through December 15; the current trial ends before judging and is set to stop usage afterward.
 - Feedback from actual Nebius/NVIDIA use; do not invent product feedback.
 
 ## Limitations and next steps
@@ -45,7 +49,7 @@ The current release is local and uses synthetic business scenarios. Small repeat
 
 ## Rules check
 
-Reviewed October 18, 2026. The official rules require a runtime Nebius integration using an NVIDIA open-source model, public source with a license and setup guidance, a working demo/application/test-build URL, track identification, and a public YouTube demonstration under three minutes. The one-minute hardware/module clause is specified for Physical AI. Our selected track is Coding and Agentic Engineering. Judging is December 1–15, 2026; account access and credit expiry must support the proposed judging arrangement. Source: [official rules](https://nebiusglobalaihackathon.devpost.com/rules).
+Reviewed October 22, 2026. The official rules require a working app that makes runtime Nebius Token Factory calls or uses Nebius AI Cloud and at least one NVIDIA open-source model; public source with a license and setup guidance; a working demo/application/test-build URL; track identification; and a public YouTube demonstration under three minutes. **Best Apps and Agents** is the recommended track for Skylark's current implementation. The Coding and Agentic Engineering track now specifically describes coding agents and developer tools that write, run, and test code in Token Factory Sandboxes; Skylark does not use those Sandboxes. The submission deadline is **October 30, 2026 at 10:00 a.m. PDT (10:30 p.m. IST)**. Judging is December 1–15, 2026, and the project must remain free and unrestricted for judges through that period. Account access and credit expiry must support that arrangement. Source: [official rules](https://nebiusglobalaihackathon.devpost.com/rules).
 
 ## 150-second recording script
 
@@ -58,4 +62,4 @@ Reviewed October 18, 2026. The official rules require a runtime Nebius integrati
 | 95–130 | Show the completed fresh comparison and controls, with counts, uncertainty, costs, and any regression. Do not substitute fixture results. |
 | 130–150 | Export and run the regression test. Finish with local adapter support and the limits of the evidence. |
 
-Wait for genuine live measurements before recording claims about model improvement. This script requires no invented percentages or winning probability.
+Use the completed limited live measurements, including the inconclusive attempt, when recording the demo. This script requires no invented percentages or winning probability.

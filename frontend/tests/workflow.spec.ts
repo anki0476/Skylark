@@ -1,5 +1,24 @@
 import {test,expect} from '@playwright/test';
 
+// The mascot introduction has its own tests. Keep workflow tests focused on
+// the page controls they exercise, as a real returning visitor would see them.
+test.beforeEach(async({page})=>{
+ await page.addInitScript(()=>{
+  try { localStorage.setItem('skylark.sky.intro.seen.v1','1'); } catch { /* blocked storage is tested below */ }
+ });
+});
+
+test('custom booking message is not silently treated as a scripted fixture',async({page})=>{
+ await page.goto('/#/app');
+ await expect(page.locator('.scenario-grid')).toHaveCount(0);
+ const message=page.getByRole('textbox',{name:'Task message'});
+ await message.fill('Check the booking outcome before any retry.');
+ await page.getByRole('button',{name:'Run fixture'}).click();
+ await expect(page.getByRole('alert')).toContainText('Custom booking requests require Fresh model evaluation.');
+ await message.clear();
+ await expect(page.getByRole('button',{name:'Run fixture'})).toBeEnabled();
+});
+
 test('fixture → incident → reviewed repair → comparison → export survives refresh',async({page})=>{
  await page.goto('/#/app');
  await expect(page.getByRole('heading',{name:'Experiments',exact:true})).toBeVisible();
@@ -32,6 +51,30 @@ test('fixture → incident → reviewed repair → comparison → export survive
  expect((await reportDownload).suggestedFilename()).toBe('skylark-results.json');
  await page.screenshot({path:'../.cache/skylark-results.png',fullPage:true});
  await page.screenshot({path:'../.cache/skylark-results-overview.png',fullPage:false});
+});
+
+test('Results scopes groups, attempts, export and spending to a saved benchmark',async({page})=>{
+ const id='a'.repeat(32);
+ const selected={id:'b'.repeat(32),status:'completed',created:1,result:{verdict:'passed'},snapshot:{verifier_version:'reservation/5',spec:{mode:'fixture',scenario:{name:'Scoped control',fault:{kind:'none'}},policy:{}}}};
+ const checks=Object.fromEntries(['safety','task_completion','reporting_accuracy','fault_coverage'].map(name=>[name,{passed:1,failed:0,unknown:0,not_applicable:name==='fault_coverage'?1:0,observed:1}]));
+ const group={id:'group',condition:'none',configuration:'original',model:{id:'test-model'},split:'control',verifier_version:'reservation/5',mode:'fixture',dimensions:checks,total:1,passed:1,failed:0,safe_incomplete:0,inconclusive:0,pending:0,latency_seconds:{median:1},tool_calls:{median:1},accounted_usd:0.001,uncertain_usd:0,unique_scenarios:1,execution_statuses:{completed:1},input_tokens:10,output_tokens:10,provider_requests:1};
+ await page.route('**/api/v1/benchmarks',route=>route.fulfill({json:[{id,created:1,mode:'fixture',split:'held_out',run_count:1}]}));
+ await page.route(`**/api/v1/results?comparison_id=${id}`,route=>route.fulfill({json:{comparison_id:id,groups:[group],budget:{accounted_usd:0.02,uncertain_usd:0.003}}}));
+ await page.route(`**/api/v1/runs?comparison_id=${id}`,route=>route.fulfill({json:[selected]}));
+ await page.goto('/#/app');
+ await page.getByRole('button',{name:'Results',exact:true}).click();
+ const scope=page.getByLabel('Result scope');
+ await expect(scope).toContainText('held out · fixture · 1 runs');
+ await scope.selectOption(id);
+ await expect(page.getByRole('heading',{name:'Protocol attempts'})).toBeVisible();
+ await expect(page.getByRole('button',{name:/Scoped control/})).toBeVisible();
+ await expect(page.getByText('$0.0010 accounted in this protocol')).toBeVisible();
+ await expect(page.getByText('$0.0200 accounted across the whole project')).toBeVisible();
+ await expect(page.getByRole('link',{name:'Export results JSON'})).toHaveAttribute('href',`/api/v1/results/export?comparison_id=${id}`);
+ await page.reload();
+ await page.getByRole('button',{name:'Results',exact:true}).click();
+ await expect(scope).toHaveValue(id);
+ await expect(page.getByRole('button',{name:/Scoped control/})).toBeVisible();
 });
 
 test('polling keeps evidence usable without SSE or the recent-runs entry',async({page})=>{
@@ -177,17 +220,21 @@ test('landing opens the workbench and fits mobile',async({page})=>{
  await page.setViewportSize({width:390,height:844});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBeFalsy();
  await page.screenshot({path:'../.cache/skylark-landing-mobile.png',fullPage:true});
- await page.getByRole('link',{name:'Open Skylark',exact:true}).click();
+ await page.getByRole('link',{name:'Get Started',exact:true}).click();
  await expect(page.getByRole('button',{name:'Run fixture'})).toBeVisible();
  await page.reload();
  await expect(page.getByRole('button',{name:'Run fixture'})).toBeVisible();
 });
 
-test('particle renderer loads only when its wordmark approaches the viewport',async({page})=>{
+test('particle wordmark appears only on About and loads near the viewport',async({page})=>{
  const requests:string[]=[];
  page.on('request',request=>{if(request.url().includes('InteractiveParticles-'))requests.push(request.url())});
  await page.goto('/');
+ await expect(page.getByRole('img',{name:'SKYLARK — interactive particle wordmark'})).toHaveCount(0);
+ await page.getByRole('link',{name:'Get Started',exact:true}).click();
+ await expect(page.getByRole('img',{name:'SKYLARK — interactive particle wordmark'})).toHaveCount(0);
  expect(requests).toHaveLength(0);
+ await page.getByRole('button',{name:'About',exact:true}).click();
  const particleRequest=page.waitForRequest(request=>request.url().includes('InteractiveParticles-'));
  await page.getByRole('img',{name:'SKYLARK — interactive particle wordmark'}).scrollIntoViewIfNeeded();
  await particleRequest;
@@ -224,10 +271,10 @@ test('theme persists across app and landing and follows system changes',async({p
  await page.reload();
  await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
  await page.locator('a.brand').click();
- await expect(page.getByRole('link',{name:'Open Skylark',exact:true})).toBeVisible();
+ await expect(page.getByRole('link',{name:'Get Started',exact:true})).toBeVisible();
  await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
  await page.screenshot({path:'../.cache/skylark-dark-landing.png',fullPage:true});
- await page.getByRole('link',{name:'Open Skylark',exact:true}).click();
+ await page.getByRole('link',{name:'Get Started',exact:true}).click();
  await page.getByRole('button',{name:'Settings',exact:true}).click();
  await page.getByRole('button',{name:'Appearance',exact:true}).click();
  await page.getByLabel('Theme',{exact:true}).selectOption('system');
@@ -251,4 +298,37 @@ test('navigation help appears after two seconds and dismisses without navigating
  await page.mouse.move(600,50);
  await expect(page.getByRole('tooltip')).toHaveCount(0);
  await expect(page.getByRole('heading',{name:'Experiments',exact:true})).toBeVisible();
+});
+
+test('sidebar icons stay visible while images load or fail',async({page})=>{
+ await page.setViewportSize({width:390,height:844});
+ let releaseImages!:()=>void;
+ const imagesReady=new Promise<void>(resolve=>{releaseImages=resolve});
+ await page.route('**/assets/*.png',async route=>{
+  if(route.request().url().includes('results-chart-'))return route.abort();
+  await imagesReady;
+  return route.continue();
+ });
+ await page.goto('/#/app',{waitUntil:'domcontentloaded'});
+ const icons=page.locator('.sidebar nav .nav-icon-slot');
+ await expect(icons).toHaveCount(5);
+ await expect(icons.locator('svg')).toHaveCount(5);
+ releaseImages();
+ await expect(icons.locator('img.is-loaded')).toHaveCount(4);
+ await expect(icons.locator('svg')).toHaveCount(1);
+ await expect(icons.nth(3).locator('svg')).toBeVisible();
+});
+
+test('workbench remains usable when browser storage is blocked',async({page})=>{
+ await page.addInitScript(()=>Object.defineProperty(window,'localStorage',{
+  configurable:true,
+  get(){throw new DOMException('Storage blocked','SecurityError')},
+ }));
+ await page.goto('/#/app');
+ await expect(page.getByRole('button',{name:'Run fixture'})).toBeEnabled();
+ await page.getByRole('button',{name:'Run fixture'}).click();
+ await expect(page.getByRole('heading',{name:'Incident'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Propose repair'})).toBeEnabled({timeout:60000});
+ await page.getByRole('button',{name:'Propose repair'}).click();
+ await expect(page.getByRole('heading',{name:'Repair comparison'})).toBeVisible();
 });

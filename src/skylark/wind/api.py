@@ -8,7 +8,7 @@ from fastapi.responses import Response, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field
 from .db import Database, Conflict, BudgetExceeded
-from .domain import RunSpec, Strict, scenario_catalog
+from .domain import RunSpec, Strict, scenario_catalog, VERIFIER_VERSION
 from .provider import readiness, ProviderFailure
 from .service import enqueue, propose, compare, results
 from .artifacts import bundle
@@ -73,11 +73,11 @@ def create_app(db: Database, frontend: Path | None = None):
     @app.get("/api/v1/status")
     def status():
         budget = db.budget(include_attempts=False)
-        return {"product": "Skylark", "version": "0.2.0", "live": readiness(db, budget=budget), "budget": budget, "queue": db.queue_summary(), "scenarios": scenario_catalog(), "scope": "Local controlled beta. No production-scale claim."}
+        return {"product": "Skylark", "version": "0.2.0", "verifier_version": VERIFIER_VERSION, "live": readiness(db, budget=budget), "budget": budget, "queue": db.queue_summary(), "scenarios": scenario_catalog(), "scope": "Local controlled beta. No production-scale claim."}
 
     @app.get("/api/v1/runs")
-    def list_runs():
-        return db.list_runs()
+    def list_runs(comparison_id: str | None = Query(default=None, min_length=32, max_length=32, pattern="^[a-f0-9]+$")):
+        return db.list_runs(comparison_id=comparison_id)
 
     @app.post("/api/v1/runs", status_code=202)
     def submit(spec: RunSpec, idempotency_key: str = Header(..., min_length=8, max_length=128)):
@@ -155,9 +155,13 @@ def create_app(db: Database, frontend: Path | None = None):
             raise HTTPException(404, "Comparison not found")
         return result
 
+    @app.get("/api/v1/benchmarks")
+    def benchmarks():
+        return db.list_benchmarks()
+
     @app.get("/api/v1/results")
-    def report():
-        return results(db)
+    def report(comparison_id: str | None = Query(default=None, min_length=32, max_length=32, pattern="^[a-f0-9]+$")):
+        return results(db, comparison_id)
 
     @app.get("/api/v1/results/export")
     def report_export(comparison_id: str | None = None):

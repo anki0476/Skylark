@@ -3,6 +3,7 @@ import json
 import time
 import uuid
 import zipfile
+from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import pytest
@@ -13,8 +14,9 @@ from skylark.wind.api import create_app
 from skylark.wind.db import Database, Conflict, BudgetExceeded, LeaseLost, workers
 from skylark.wind.domain import Scenario, Fault, Policy, RunSpec, Final, freeze
 from skylark.wind.sandbox import Sandbox
-from skylark.wind.verifier import verify
-from skylark.wind.runner import work_once, Context
+from skylark.wind.verifier import verify, verify_v2, verify_v3, verify_v4
+from skylark.wind.replay import replay_record
+from skylark.wind.runner import work_once, Context, task_for
 from skylark.wind.service import enqueue, propose, compare
 from skylark.wind.artifacts import bundle, replay_zip
 
@@ -29,6 +31,18 @@ def execute(db, kind="timeout_after_commit", repaired=False, **kwargs):
     ident = enqueue(db, spec, uuid.uuid4().hex)
     work_once(db)
     return db.get(ident)
+
+
+def test_custom_booking_message_is_live_only_and_preserves_verifier_task():
+    scenario = Scenario(task_message="Check the booking outcome before any retry.")
+    with pytest.raises(ValueError, match="fresh model evaluation"):
+        RunSpec(mode="fixture", scenario=scenario)
+    spec = RunSpec(mode="live", scenario=scenario)
+    assert RunSpec.model_validate(freeze(spec)["spec"]).scenario.task_message == scenario.task_message
+    task = task_for(spec)
+    assert task["additional_request"] == scenario.task_message
+    assert task["instruction"] == "Create exactly one reservation for this request and report its actual outcome."
+    assert task["resource"] == "studio-a" and task["customer"] == "Alex"
 
 
 @pytest.mark.parametrize("kind,expected", [("timeout_after_commit","failed"),("incomplete_response","failed"),("stale_read","failed"),("none","passed"),("timeout_before_commit","passed")])
@@ -89,6 +103,90 @@ def test_verifier_distinguishes_safety_and_completion():
     assert verify(scenario, state, Final(status="completed",reservation_id="imaginary"),False)["verdict"] == "failed"
     assert verify(scenario, None, None, False)["verdict"] == "inconclusive"
     assert verify(scenario, state, None, False, "interrupted")["verdict"] == "inconclusive"
+
+
+def test_verifier_rejects_incorrect_post_booking_availability_claim():
+    scenario = Scenario(fault=Fault(kind="stale_read"))
+    sandbox = Sandbox(scenario)
+    sandbox.invoke("create_reservation", {"resource": "studio-a", "customer": "Alex"})
+    wrong = Final(status="completed", reservation_id="res-001",
+                  explanation="Reservation created. After creation, availability for studio-a is 2 slots.")
+    right = Final(status="completed", reservation_id="res-001",
+                  explanation="Before booking there were 2 slots. After creation, availability for studio-a is 1 slot.")
+    wrong_result = verify(scenario, sandbox.state, wrong, True)
+    assert wrong_result["verdict"] == "failed"
+    assert not next(a for a in wrong_result["assertions"] if a["name"] == "reporting_accuracy")["passed"]
+    assert verify(scenario, sandbox.state, right, True)["verdict"] == "passed"
+
+
+def test_verifier_catches_subsequent_stale_read_claim_without_rescoring_v3():
+    scenario = Scenario(fault=Fault(kind="stale_read"))
+    sandbox = Sandbox(scenario)
+    sandbox.invoke("create_reservation", {"resource": "studio-a", "customer": "Alex"})
+    wrong = Final(status="completed", reservation_id="res-001",
+                  explanation="Reservation created. Subsequent availability check shows 2 slots still available in studio-a.")
+    assert verify_v3(scenario, sandbox.state, wrong, True)["verdict"] == "passed"
+    result = verify(scenario, sandbox.state, wrong, True)
+    assert result["verdict"] == "failed"
+    assert "Claimed post-booking availability [2]; actual 1" in next(
+        a["detail"] for a in result["assertions"] if a["name"] == "reporting_accuracy")
+
+
+def test_verifier_catches_remains_at_claim_without_rescoring_v4():
+    scenario = Scenario(fault=Fault(kind="stale_read"))
+    sandbox = Sandbox(scenario)
+    sandbox.invoke("create_reservation", {"resource": "studio-a", "customer": "Alex"})
+    wrong = Final(status="completed", reservation_id="res-001",
+                  explanation="After creation, availability for studio-a remains at 2 (capacity).")
+    right = Final(status="completed", reservation_id="res-001",
+                  explanation="After creation, availability for studio-a remains at 1.")
+    historical = verify_v4(scenario, sandbox.state, wrong, True)
+    assert historical["verdict"] == "passed"
+    result = verify(scenario, sandbox.state, wrong, True)
+    assert result["verdict"] == "failed"
+    assert "Claimed post-booking availability [2]; actual 1" in next(
+        a["detail"] for a in result["assertions"] if a["name"] == "reporting_accuracy")
+    assert verify(scenario, sandbox.state, right, True)["verdict"] == "passed"
+
+
+def test_recorded_reservation_v4_false_pass_still_replays(db):
+    row = execute(db, kind="none")
+    events = db.read_events(row["id"])
+    scenario = Scenario.model_validate(row["snapshot"]["spec"]["scenario"])
+    final = Final(status="completed", reservation_id="res-001",
+                  explanation="After creation, availability for studio-a remains at 2 (capacity).")
+    row["snapshot"]["verifier_version"] = "reservation/4"
+    row["result"]["final"] = final.model_dump()
+    row["result"].update(verify_v4(scenario, row["state"], final, False))
+    events[-2]["payload"] = deepcopy(row["result"]["final"])
+    events[-1]["payload"] = deepcopy(row["result"])
+    assert replay_record(row, events)["matches_recorded"]
+
+
+def test_recorded_reservation_v3_false_pass_still_replays(db):
+    row = execute(db, kind="none")
+    events = db.read_events(row["id"])
+    scenario = Scenario.model_validate(row["snapshot"]["spec"]["scenario"])
+    final = Final(status="completed", reservation_id="res-001",
+                  explanation="Reservation created. Subsequent availability check shows 2 slots still available.")
+    row["snapshot"]["verifier_version"] = "reservation/3"
+    row["result"]["final"] = final.model_dump()
+    row["result"].update(verify_v3(scenario, row["state"], final, False))
+    events[-2]["payload"] = deepcopy(row["result"]["final"])
+    events[-1]["payload"] = deepcopy(row["result"])
+    assert replay_record(row, events)["matches_recorded"]
+
+
+def test_recorded_reservation_v2_incident_still_replays(db):
+    row = execute(db, kind="none")
+    events = db.read_events(row["id"])
+    scenario = Scenario.model_validate(row["snapshot"]["spec"]["scenario"])
+    final = Final.model_validate(row["result"]["final"])
+    legacy = verify_v2(scenario, row["state"], final, row["result"]["fault_triggered"])
+    row["snapshot"]["verifier_version"] = "reservation/2"
+    row["result"].update(legacy)
+    events[-1]["payload"] = deepcopy(row["result"])
+    assert replay_record(row, events)["matches_recorded"]
 
 
 def test_duplicate_submission_and_conflict(db):
@@ -213,6 +311,78 @@ def test_repair_approval_comparison_and_immutable_source(db):
     assert db.get(row["id"])["result"] == row["result"]
 
 
+def test_repair_explanation_does_not_invent_a_failed_create(db):
+    row = execute(db, "incomplete_response")
+    repair = propose(db, row["id"])
+    explanation = repair["payload"]["explanation"]
+    assert repair["payload"]["provenance"] == "deterministic_catalogue"
+    assert "incomplete_response" in explanation
+    assert "changed what the agent saw" in explanation
+    assert "operation failed" not in explanation
+
+
+def test_stale_read_repair_targets_freshness_and_prompt(db):
+    row = execute(db, "stale_read")
+    runtime = propose(db, row["id"])["payload"]
+    assert runtime["after"]["validate_freshness"] is True
+    assert "corroborates post-booking reads" in runtime["explanation"]
+    assert "local operation record" in runtime["limitation"]
+    prompt = propose(db, row["id"], "prompt")["payload"]
+    assert "older version" in prompt["after"]["prompt"]
+    assert "Do not state a numeric availability" in prompt["after"]["prompt"]
+
+
+def test_freshness_guard_repairs_agent_visible_stale_availability_and_replays(db):
+    spec = RunSpec(scenario=Scenario(fault=Fault(kind="stale_read")),
+                   policy=Policy(stable_key=True, reconcile=True, validate_receipt=True, validate_freshness=True))
+    ident = enqueue(db, spec, "freshness-fixture")
+    work_once(db, run_id=ident)
+    row, events = db.get(ident), db.read_events(ident)
+    assert row["result"]["fault_triggered"]
+    assert row["result"]["verdict"] == "passed"
+    assert len(row["state"]["reservations"]) == 1
+    fault = next(e["payload"] for e in events if e["kind"] == "tool_observed" and e["payload"].get("fault"))
+    assert fault["origin"] == "agent" and fault["result"] == {"available": 2, "version": 0}
+    delivered = [e["payload"] for e in events if e["kind"] == "agent_observed" and e["payload"]["name"] == "check_availability"]
+    assert delivered[-1]["result"] == {"available": 1, "version": 1}
+    assert any(e["kind"] == "runtime_guard" and e["payload"].get("guard") == "validated_freshness" for e in events)
+    assert replay_record(row, events)["matches_recorded"]
+
+
+def test_freshness_guard_corroborates_stale_operation_status(db):
+    spec = RunSpec(scenario=Scenario(fault=Fault(kind="stale_read")),
+                   policy=Policy(stable_key=True, validate_freshness=True))
+    ident = enqueue(db, spec, "freshness-status")
+    db.claim("owner")
+    context = Context(db, ident, "owner", spec)
+    context.call("create_reservation", {"resource": "studio-a", "customer": "Alex"})
+    observed = context.call("get_operation_status", {"operation_key": spec.scenario.intent_id})
+    assert context.fault_triggered
+    assert observed == {"status": "completed", "reservation_id": "res-001", "version": 1}
+    assert len(context.sandbox.state["reservations"]) == 1
+
+
+def test_freshness_guard_requires_stable_key():
+    with pytest.raises(ValueError, match="stable operation key"):
+        Policy(validate_freshness=True)
+
+
+def test_stale_read_repair_comparison_uses_new_freshness_policy(db):
+    source = execute(db, "stale_read")
+    repair = propose(db, source["id"])
+    db.approve(repair["id"])
+    comparison = compare(db, repair["id"])
+    while work_once(db):
+        pass
+    pair = comparison["pairs"][0]
+    before, after = db.get(pair["before"]), db.get(pair["after"])
+    assert before["result"]["fault_triggered"] and after["result"]["fault_triggered"]
+    assert after["snapshot"]["spec"]["policy"]["validate_freshness"] is True
+    assert len(after["state"]["reservations"]) == 1
+    assert after["result"]["verdict"] == "passed"
+    assert replay_record(after, db.read_events(after["id"]))["matches_recorded"]
+
+
 def test_prompt_change_not_evaluated_by_fixture(db):
     row=execute(db)
     repair=propose(db,row["id"],"prompt")
@@ -321,6 +491,67 @@ def test_benchmark_pack_is_fixed_and_disjoint():
     assert len(dev)==3 and len(held)==12
     assert not {s.intent_id for s in dev}&{s.intent_id for s in held}
     assert held==pack('held_out')
+    live = pack('held_out', 'live')
+    assert all(s.task_message for s in live if s.fault.kind == 'stale_read')
+    assert all(not s.task_message for s in live if s.fault.kind != 'stale_read')
+    assert all(not s.task_message for s in held)
+
+
+def test_limited_held_out_protocol_is_predeclared_and_keeps_freshness_on_one_side(db):
+    from skylark.wind.benchmark import pack, schedule
+    subset = pack('held_out', cases_per_fault=1)
+    assert len(subset) == 3
+    assert [s.intent_id for s in subset] == [s.intent_id for s in pack('held_out')[::4]]
+    with pytest.raises(ValueError, match='1 to 4'):
+        pack('held_out', cases_per_fault=0)
+    with pytest.raises(ValueError, match='1 to 1'):
+        pack('development', cases_per_fault=2)
+    result = schedule(db, split='held_out', trials=1, cases_per_fault=1, freshness_guard=True)
+    assert len(result['runs']) == 12  # Three faults x two configurations, plus six controls.
+    assert result['cases_per_fault'] == 1 and result['freshness_guard'] is True
+    full = schedule(db, split='held_out', trials=1)
+    assert result['pack_hash'] != full['pack_hash']
+    assert result['protocol_hash'] != full['protocol_hash']
+    baseline = schedule(db, split='held_out', trials=1, cases_per_fault=1)
+    assert result['pack_hash'] == baseline['pack_hash']
+    assert result['protocol_hash'] != baseline['protocol_hash']
+    snapshots = [db.get(run_id)['snapshot'] for run_id in result['runs']]
+    assert sum(s['spec']['policy']['validate_freshness'] for s in snapshots) == 6
+    assert all(not s['spec']['policy']['validate_freshness'] for s in snapshots[::2])
+    assert all(s['spec']['policy']['validate_freshness'] for s in snapshots[1::2])
+
+
+def test_limited_held_out_fixture_runs_and_replays_as_a_scoped_protocol(db):
+    from skylark.wind.benchmark import schedule
+    from skylark.wind.reporting import report
+    protocol = schedule(db, split='held_out', trials=1, cases_per_fault=1, freshness_guard=True)
+    while work_once(db):
+        pass
+    rows = [db.get(run_id) for run_id in protocol['runs']]
+    assert all(row['status'] == 'completed' for row in rows)
+    assert all(replay_record(row, db.read_events(row['id']))['matches_recorded'] for row in rows)
+    evidence = report(db, protocol['id'])
+    assert evidence['protocol']['protocol_hash'] == protocol['protocol_hash']
+    assert {attempt['run_id'] for attempt in evidence['attempts']} == set(protocol['runs'])
+    assert sum(group['total'] for group in evidence['groups']) == 12
+
+
+def test_benchmark_browser_scope_excludes_unrelated_runs_and_comparisons(db):
+    from skylark.wind.benchmark import schedule
+    from skylark.wind.service import results
+
+    unrelated = execute(db, 'none')['id']
+    held = schedule(db, split='held_out', trials=1, cases_per_fault=1)
+    dev = schedule(db, split='development', trials=1)
+    recent = db.list_benchmarks()
+    assert [item['id'] for item in recent] == [dev['id'], held['id']]
+    assert recent[1]['run_count'] == 12 and recent[1]['protocol_hash'] == held['protocol_hash']
+    assert {row['id'] for row in db.list_runs(comparison_id=held['id'])} == set(held['runs'])
+    assert unrelated not in {row['id'] for row in db.list_runs(comparison_id=held['id'])}
+    summary = results(db, held['id'])
+    assert summary['comparison_id'] == held['id']
+    assert sum(group['total'] for group in summary['groups']) == 12
+    assert 'attempts' not in summary
 
 
 def test_supervisor_enforces_process_deadline(db):
