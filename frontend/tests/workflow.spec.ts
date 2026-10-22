@@ -8,6 +8,30 @@ test.beforeEach(async({page})=>{
  });
 });
 
+test('workspace switcher shows the available workspace and planned cloud option',async({page})=>{
+ await page.goto('/#/app');
+ const switcher=page.getByRole('button',{name:'Switch workspace. Current: Local workspace'});
+ await switcher.click();
+ await expect(switcher).toHaveAttribute('aria-expanded','true');
+ const workspaces=page.getByRole('group',{name:'Workspaces'});
+ await expect(workspaces.getByRole('button',{name:'Local workspace'})).toHaveAttribute('aria-current','true');
+ await expect(workspaces.getByRole('button',{name:'Cloud workspace Coming soon'})).toBeDisabled();
+ await page.keyboard.press('Escape');
+ await expect(workspaces).toHaveCount(0);
+ await expect(switcher).toBeFocused();
+ await page.setViewportSize({width:390,height:844});
+ await expect(switcher).toBeVisible();
+ await switcher.click();
+ await expect(workspaces).toBeVisible();
+});
+
+test('execution mode names distinguish scripted and paid model evaluations',async({page})=>{
+ await page.goto('/#/app');
+ const mode=page.getByLabel('Execution mode');
+ await expect(mode.locator('option[value="fixture"]')).toHaveText('Scripted evaluation · $0 API cost');
+ await expect(mode.locator('option[value="live"]')).toContainText('Model evaluation · API cost applies');
+});
+
 test('custom booking message is not silently treated as a scripted fixture',async({page})=>{
  await page.goto('/#/app');
  await expect(page.locator('.scenario-grid')).toHaveCount(0);

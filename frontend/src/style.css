@@ -468,3 +468,28 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 [data-theme="dark"] .sky-intro-loading{color:#a9c3f5}
 @media(max-width:700px){.sky-flight{width:min(65vw,280px,38vh)}.sky-intro-skip{top:16px;right:16px}.sky-intro-card{left:18px;right:18px;top:auto;bottom:24px;width:auto;padding:22px}.sky-intro-card p{font-size:13px;margin:10px 0 18px}}
 @media(prefers-reduced-motion:reduce){.sky-flight{will-change:auto}.sky-pose-wave{animation:none;opacity:1}.sky-pose-flight{opacity:0}.sky-intro-arrived .sky-bird,.sky-intro-card{animation:none}}
+
+/* Workspace selection lives above the persistent sidebar controls. */
+.workspace-switcher{position:relative}
+.sidebar-bottom .workspace{width:100%;margin:8px 0;background:transparent;text-align:left;color:inherit}
+.sidebar-bottom .workspace:hover,.sidebar-bottom .workspace[aria-expanded="true"]{background:#e2e9f8;border-color:#b9cbed}
+.workspace-label{flex:1;min-width:0}
+.workspace-chevron{flex:none;transition:transform .16s ease}
+.workspace-chevron.is-open{transform:rotate(-90deg)}
+.workspace-menu{position:absolute;left:0;bottom:calc(100% + 8px);z-index:5;width:242px;padding:7px;border:1px solid #d3ddeb;border-radius:11px;background:#fcfdff;box-shadow:0 16px 38px #263c691f}
+.workspace-menu-heading{display:block;padding:8px 10px 9px;font-size:9px;font-weight:700;letter-spacing:1.4px;color:#8190a9}
+.workspace-option{display:flex;align-items:center;gap:9px;width:100%;min-height:44px;padding:7px 9px;border:0;border-radius:7px;background:transparent;text-align:left;font-size:11px;white-space:nowrap;color:#263753}
+.workspace-option>span:nth-child(2){flex:1;min-width:0}
+.workspace-option.is-current{background:#edf3ff;color:#2457b9}
+.workspace-option.is-current:hover{background:#e0ebff}
+.workspace-option:disabled{opacity:1;cursor:not-allowed;color:#7a879e}
+.workspace-option:disabled svg{flex:none;color:#8190a9}
+.workspace-coming-soon{flex:none;padding:3px 5px;border:1px solid #d9e0ed;border-radius:4px;background:#f1f4fa;color:#6c7d9b;font-size:8px;font-weight:700;letter-spacing:.15px}
+[data-theme="dark"] .sidebar-bottom .workspace:hover,[data-theme="dark"] .sidebar-bottom .workspace[aria-expanded="true"]{background:#243759;border-color:#4c638b}
+[data-theme="dark"] .workspace-menu{background:#1a2538;border-color:#35425c;box-shadow:0 16px 38px #0006}
+[data-theme="dark"] .workspace-menu-heading,[data-theme="dark"] .workspace-option:disabled,[data-theme="dark"] .workspace-option:disabled svg{color:#a0aec7}
+[data-theme="dark"] .workspace-option{color:#e0e8f8}
+[data-theme="dark"] .workspace-option.is-current{background:#263b61;color:#c4d8ff}
+[data-theme="dark"] .workspace-option.is-current:hover{background:#304a76}
+[data-theme="dark"] .workspace-coming-soon{background:#29354b;border-color:#43546f;color:#b8c9e6}
+@media(max-width:800px){.sidebar-bottom .workspace{display:flex;justify-content:center;padding:8px}.sidebar-bottom .workspace-label,.sidebar-bottom .workspace-chevron{display:none}.workspace-menu{left:calc(100% + 8px);bottom:0}}
