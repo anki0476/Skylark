@@ -210,7 +210,7 @@ test('retrying a lost submission response reuses its experiment identity',async(
 
 test('validation errors explain the invalid field',async({page})=>{
  await page.goto('/#/app');
- await page.getByLabel('Resource',{exact:true}).fill('INVALID RESOURCE');
+ await page.getByRole('textbox',{name:'Resource to book'}).fill('INVALID RESOURCE');
  await page.getByRole('button',{name:'Run fixture'}).click();
  await expect(page.getByRole('alert')).toContainText('scenario.resource');
  await expect(page.getByRole('alert')).not.toContainText('[object Object]');
@@ -248,7 +248,7 @@ test('settings preferences persist and apply without changing live execution',as
  await dialog.getByLabel('Default customer').fill('Taylor');
  await dialog.getByRole('button',{name:'Done',exact:true}).click();
  await page.reload();
- await expect(page.getByLabel('Customer',{exact:true})).toHaveValue('Taylor');
+ await expect(page.getByRole('textbox',{name:'Customer name'})).toHaveValue('Taylor');
  await expect(page.locator('.shell')).toHaveClass(/no-shine/);
  await expect(page.locator('.shell')).toHaveClass(/compact-tables/);
  await expect(page.getByLabel('Execution mode')).toHaveValue('fixture');
