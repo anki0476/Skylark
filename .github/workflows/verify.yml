@@ -38,3 +38,13 @@ jobs:
           SKYLARK_TEST_SERVER: '1'
           SKYLARK_TEST_PORT: '8000'
       - run: python scripts/release_smoke.py --output .cache/release-smoke
+      - run: python scripts/package_release.py
+      - run: python scripts/verify_release.py dist/skylark-local-beta.zip
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: skylark-local-beta-${{ github.sha }}
+          path: dist/skylark-local-beta.zip
+          if-no-files-found: error
+          retention-days: 60
+          compression-level: 0
