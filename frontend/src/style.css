@@ -538,6 +538,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .connect-intro h2{margin-top:11px}
 .connect-intro p{margin:9px 0 19px;max-width:78ch}
 .connect-guide>p{max-width:88ch;margin:10px 0 20px}
+.pilot-evidence{display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;padding:12px 0;border-top:1px solid #dce6f7}
+.pilot-evidence>div{display:flex;flex-direction:column;gap:2px;margin-right:auto}
+.pilot-evidence strong{font-size:12px}
+.pilot-evidence span{font-size:11px;color:#637796}
+.pilot-evidence .text-button{margin:0}
 .connect-detail{padding:15px 0;border-top:1px solid #dce6f7}
 .connect-detail summary{cursor:pointer;color:#2b5fb5;font-size:12px;font-weight:650}
 .connect-detail p{margin:12px 0;font-size:12px;max-width:84ch}
@@ -557,6 +562,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 [data-theme="dark"] .sample-task-summary p,[data-theme="dark"] .sample-fault-preview p{color:#a1adc3}
 [data-theme="dark"] .sample-task-summary p strong,[data-theme="dark"] .sample-fault-preview strong{color:#e0e8f8}
 [data-theme="dark"] .connect-detail{border-color:#3b5277}
+[data-theme="dark"] .pilot-evidence{border-color:#3b5277}
+[data-theme="dark"] .pilot-evidence span{color:#a8badd}
 [data-theme="dark"] .connect-detail pre{background:#263856;color:#dce8ff}
 [data-theme="dark"] .adapter-steps li{color:#e0e8f8;border-color:#3b5277}
 [data-theme="dark"] .table-wrap time{color:#a1adc3}

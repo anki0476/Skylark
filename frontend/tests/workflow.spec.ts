@@ -49,6 +49,24 @@ test('first visit keeps the sample visible and agent connection easy to find',as
  await expect(page.getByRole('heading',{name:'Try the sample booking failure'})).toBeVisible();
 });
 
+test('saved live agent pilot evidence is reachable from Connect agent',async({page})=>{
+ const makePilot=(id:string,created:number,stableKey:boolean,verdict:string)=>({id,status:'completed',created,result:{verdict,fault_triggered:true,assertions:[]},snapshot:{verifier_version:'reservation/5',model:{id:'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B'},spec:{mode:'local_adapter',agent_version:'independent-nemotron-booking-agent/1',scenario:{name:'The missing confirmation',fault:{kind:'timeout_after_commit'}},policy:{stable_key:stableKey}}}});
+ const original=makePilot('a'.repeat(32),100,false,'failed');
+ const guarded=makePilot('b'.repeat(32),110,true,'passed');
+ await page.route('**/api/v1/runs',route=>route.fulfill({json:[guarded,original]}));
+ await page.route(`**/api/v1/runs/${guarded.id}`,route=>route.fulfill({json:guarded}));
+ await page.route(`**/api/v1/runs/${guarded.id}/events*`,route=>route.fulfill({json:[]}));
+ await page.goto('/#/app');
+ await page.getByRole('button',{name:'Connect my agent'}).click();
+ const evidence=page.locator('.pilot-evidence');
+ await expect(evidence).toContainText('Live agent pilot');
+ await expect(evidence.getByRole('button',{name:'Original: failed'})).toBeVisible();
+ await page.setViewportSize({width:390,height:844});
+ await expect(evidence.getByRole('button',{name:'With safeguard: passed'})).toBeVisible();
+ await evidence.getByRole('button',{name:'With safeguard: passed'}).click();
+ await expect(page.getByRole('heading',{name:'Incident',exact:true})).toBeVisible();
+});
+
 test('Results identifies the latest attempt and sorts dated runs',async({page})=>{
  const now=Math.floor(Date.now()/1000);
  const makeRun=(id:string,name:string,created:number)=>({id,status:'completed',created,result:{verdict:'failed'},snapshot:{verifier_version:'reservation/5',spec:{mode:'fixture',scenario:{name,fault:{kind:'timeout_after_commit'}},policy:{}}}});
