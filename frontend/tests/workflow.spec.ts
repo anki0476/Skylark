@@ -38,14 +38,20 @@ test('first visit keeps the sample visible and agent connection easy to find',as
  await expect(page.getByRole('heading',{name:'Try the sample booking failure'})).toBeVisible();
  const connect=page.getByRole('button',{name:'Connect my agent'});
  await expect(connect).toHaveClass(/pop-button/);
+ await expect(connect).toHaveCSS('background-color','rgb(139, 92, 246)');
  await connect.click();
  await expect(page.getByRole('heading',{name:'See a fix in action'})).toBeVisible();
  await expect(page.getByRole('heading',{name:'Have your own agent?'})).toBeVisible();
+ await expect(page.locator('.connect-guide + .connect-intro')).toHaveCount(1);
  await expect(page.getByText('n8n, Make, and hosted agents need connectors we have not built yet.')).toBeVisible();
- await page.getByText('Connect and test an agent: step by step').click();
+ const connectionSteps=page.locator('.connect-step-button');
+ await expect(connectionSteps).toHaveClass(/pop-button/);
+ await connectionSteps.click();
  await expect(page.getByText('examples/cautious_adapter.py')).toBeVisible();
  await expect(page.getByText('examples/unsafe_retry_adapter.py --compare-repair')).toBeVisible();
- await page.getByRole('button',{name:'Try the sample',exact:true}).click();
+ const sample=page.getByRole('button',{name:'Try the sample',exact:true});
+ await expect(sample).not.toHaveClass(/pop-button/);
+ await sample.click();
  await expect(page.getByRole('heading',{name:'Try the sample booking failure'})).toBeVisible();
 });
 
@@ -142,7 +148,7 @@ test('fixture → incident → reviewed repair → comparison → export survive
  await expect(page.getByRole('heading',{name:'Repair comparison'})).toBeVisible();
  await page.getByRole('button',{name:'Test this fix'}).click();
  await expect(page.getByRole('heading',{name:'passed',exact:true})).toBeVisible({timeout:60000});
- await expect(page.getByRole('heading',{name:'failed',exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'failed',exact:true})).toBeVisible({timeout:60000});
  await page.screenshot({path:'../.cache/skylark-comparison.png',fullPage:true});
  await page.getByRole('button',{name:/Results/}).first().click();
  await expect(page.getByRole('heading',{name:'Results'})).toBeVisible();
