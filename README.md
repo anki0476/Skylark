@@ -20,6 +20,8 @@ Skylark is a local agent reliability lab. Its example reservation agent encounte
 
 **Current evidence:** offline fixtures, mocked-provider tests, and live runs using `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` through Nebius Token Factory. A predeclared, one-trial live development pack completed 12/12 runs: all six fault injections were reached, original fault runs passed 1/3, guarded fault runs passed 2/3, and all six fault-free controls passed. A separate [limited live held-out protocol](docs/live-held-out-2026-10-22.md) reached terminal status for all 12 attempts: 11 completed, one guarded timeout attempt failed before reaching its fault and remains inconclusive. Original stale-read and incomplete-response runs failed accurate reporting; guarded pairs passed. All six controls passed. Earlier exploratory runs also exposed a safe but incomplete pre-commit timeout and a duplicate booking after a post-commit timeout. These narrow synthetic results are not a general reliability rate. This is a local controlled-beta implementation, not a multi-tenant production service.
 
+A separate [live independent-agent pilot](docs/evidence/real-agent-pilot-2026-10-24.md) connected a newly built model-driven booking agent through the trusted local adapter. Under a post-commit timeout, the original made two reservations and failed verification; the proposed runtime guard yielded one reservation and passed. Both runs used fresh Nemotron tool decisions and have replayable evidence. This is one controlled comparison, not a customer-agent integration or a general repair claim.
+
 The stale-read development result led to an optional runtime freshness guard. In one fresh exploratory comparison under verifier `reservation/5`, the original agent repeated stale availability and failed reporting accuracy, while the guarded run refreshed the read and passed. Both traces replay exactly. This single pair is not a held-out reliability estimate; existing approved repairs retain their original configuration. The [judging-readiness map](docs/judging-readiness.md) links the working product and its remaining evidence to the four official criteria.
 
 See the [exploratory live evaluation log](docs/live-evaluation-2026-10-22.md), including a discovered limitation in the original free-text reporting check.
@@ -82,11 +84,39 @@ Bundles contain `run.json`, `events.json`, a checksum manifest, instructions, an
 
 ## Connect a local agent
 
+The supported adapter runs **trusted local Python code**. It does not connect n8n, Make, or an arbitrary hosted agent. Those systems need separate connectors that record actions and independently check the real outcome.
+
+1. Check the local connection with the included cautious agent:
+
 ```powershell
 .\.venv\Scripts\python.exe -m skylark adapter examples/cautious_adapter.py
 ```
 
-Only run adapter files you trust. The example independently implements cautious recovery and is labeled local-adapter evidence. The adapter receives a task and an instrumented context; `context.call` records and fault-injects tool calls. Optional `create_environment(scenario)` supplies a versioned environment, tool schemas and argument types, initial state, tool execution, fault eligibility, stale responses, and an independent verifier. See the `Environment` protocol in `runner.py`. Reservation replay and repair presets are built in; custom environments require their own trusted replay logic and repair integration. The HTTP server never imports this code.
+   A connected run prints `mode: local_adapter`, `evidence: local_adapter_reported`, `fault_triggered: true`, and its verdict. This example should pass the default missing-confirmation fault.
+
+2. Test a **reservation repair** against an intentionally unsafe training adapter:
+
+```powershell
+.\.venv\Scripts\python.exe -m skylark adapter examples/unsafe_retry_adapter.py --compare-repair
+```
+
+   Expect a failed original run with two reservations, followed by a passing run with one. Skylark runs the **same adapter file** twice, proposes a runtime safeguard from the first run's fault evidence, and tests that safeguard in a fresh sandbox. The output includes both run IDs and the file hash. `improved_in_this_test` reports only this one comparison; it does not establish general reliability or modify the agent's code or a live service.
+
+   To repeat this local handoff and repair check 20 times against fresh sandbox state, run `.\.venv\Scripts\python.exe scripts/stress_adapter.py --trials 20` on Windows (or use your environment's Python). The script checks the stored outcomes as well as verdicts and saves a report in `.cache`. It tests only the included training adapter.
+
+   The CLI prints the result. To inspect these runs in a running web workspace, pass its data directory before `adapter`, for example `-m skylark --data .cache/ux-preview adapter ...`; otherwise the default database is `data/agent-lab`.
+
+3. Run the **model-driven pilot agent** through the local adapter. `examples/pilot_booking_agent.py` is independent of Skylark and makes a live NVIDIA Nemotron tool choice through Nebius. Its retry middleware deliberately duplicates a booking when the first confirmation is lost. `examples/nebius_agent_adapter.py` connects that agent to a synthetic reservation service and Skylark's independent outcome check. In PowerShell, from this project folder, run:
+
+```powershell
+.\scripts\run_real_agent_pilot.ps1
+```
+
+   Enter the Nebius key at the hidden prompt; the script does not save it. Verify the model's current input/output rates and your available credits before proceeding. The pilot sets a $0.05 local spending allowance and restores the previous process environment afterward. Its JSON report is written under `.cache/real-agent-pilot-*.json`; the two run IDs also appear in the Experiments/Results workspace when the app uses `.cache/ux-preview`. A successful **single comparison** requires model calls in both runs, the injected fault in both, two reservations and a failed verdict before the guard, and one reservation and a passed verdict after it. This is a test of one agent and one reservation fault, not automatic repair of arbitrary agents or production code.
+
+4. To test your own reservation-agent logic, implement `Adapter.run(task, context)`, route relevant operations through `context.call`, and replace the example path. Without `create_environment`, Skylark uses its synthetic reservation sandbox. Direct calls made by adapter code outside `context.call` can still reach external services, so use only test credentials and test systems. For a different task or external service, provide a custom environment and independent verifier. Automated repair comparison is not available for custom environments yet.
+
+Only run adapter files you trust. The cautious example independently implements recovery and is labeled local-adapter evidence. The adapter receives a task and an instrumented context; `context.call` records and fault-injects tool calls. Optional `create_environment(scenario)` supplies a versioned environment, tool schemas and argument types, initial state, tool execution, fault eligibility, stale responses, and an independent verifier. See the `Environment` protocol in `runner.py`. Reservation replay and repair presets are built in; custom environments require their own trusted replay logic and repair integration. The HTTP server never imports this code.
 
 Uninstrumented calls are outside coverage. Process supervision is not isolation for malicious code. The browser cannot upload or import Python.
 

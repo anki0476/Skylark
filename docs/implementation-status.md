@@ -1,4 +1,4 @@
-# Implementation status — October 22, 2026
+# Implementation status — October 24, 2026
 
 Skylark now tests agent recovery from tool failures. The robotics prototype is preserved at `d8a07d5`; its data was not migrated.
 
@@ -25,6 +25,8 @@ The [limited live held-out protocol](live-held-out-2026-10-22.md) subsequently r
 The updated backend and Results scope passed 81 focused Python tests, a targeted Playwright browser test, and the 11-case offline release smoke; TypeScript and the production build passed. A temporary no-worker server against the saved local database showed the held-out selector, eight scoped groups, 12 attempts, and the correct scoped export URL. After the user restarted the primary server, the live browser showed the same scope; a final UI check confirmed that clearer control labels and the chosen benchmark scope survive a page refresh. The subsequent full offline suites passed 195 Python tests and 20 browser tests; the browser suite used its own server, data directory, and disabled live inference. A version-control text scan found no matches for a Nebius token shape, personal email, or user-specific path across 107 files, and a Git history scan found no matching Nebius token shape in source and documentation. These pattern checks are not a substitute for review before publication.
 
 A fresh Python 3.12 virtual environment installed the archive's pinned dependencies and editable package; `pip check` found no broken requirements. From that extracted archive, an offline post-commit-timeout fixture produced two reservations and a failed verdict, its exported bundle replayed exactly, and a packaged completed live trace replayed exactly without a Nebius key. The included interface served on an isolated local port with live inference disabled. This same-machine clean install validates the package but does not replace an independent user's [review](independent-review.md). The [curated evidence packet](evidence/README.md) includes all 12 attempt summaries and bundles; 11 completed bundles replayed exactly. The local archive has been rebuilt but is not published.
+
+On October 24, a newly built independent booking agent made a fresh Nemotron tool decision in each half of a [live local-adapter comparison](evidence/real-agent-pilot-2026-10-24.md). The post-commit timeout was reached twice: the original retry created two reservations and failed; the proposed runtime guard preserved one reservation and passed. Both exported bundles replayed exactly. The same release candidate passed the full Python suite, 25 browser tests, frontend build, release manifest verification, and the 11-case offline smoke check. This pilot does not connect or patch an arbitrary deployed agent.
 
 ## Additional hardening
 

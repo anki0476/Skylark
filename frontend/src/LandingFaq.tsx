@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 const questions = [
  {id:'purpose',question:'What does Skylark test?',answer:'How tool-using agents recover from timeouts, stale reads, and incomplete responses. It checks safety, task completion, reporting accuracy, and whether the fault actually triggered.'},
+ {id:'connect',question:'Can I connect my existing agent?',answer:'The browser includes a booking-agent sample. Testing your own agent currently requires a trusted local Python adapter and an independent outcome check; direct browser connection to arbitrary agents is not available yet.'},
  {id:'start',question:'Do I need an API key to try it?',answer:'No. The scripted fixture runs locally without inference charges. Fresh model evaluations require a configured Nebius account and confirmed credits.'},
  {id:'live',question:'Is the demo a real model evaluation?',answer:'The supplied fixture is scripted and tests the harness. Live evaluations make new model calls and are labeled separately. Fixture results are not evidence of model reliability.'},
  {id:'privacy',question:'Where does my agent run?',answer:'Trusted agent adapters run locally. Live inference sends task and tool messages to Nebius. Only calls routed through the adapter are instrumented.'},

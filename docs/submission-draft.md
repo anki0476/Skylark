@@ -1,6 +1,6 @@
 # Skylark submission draft
 
-**Status: internal draft. Not submitted. A limited live held-out evaluation is complete; public URLs and judge access remain outstanding.**
+**Status: internal draft. Not submitted. A limited live held-out evaluation and one independent-agent pilot are complete; public URLs and judge access remain outstanding.**
 
 ## One-line description
 
@@ -24,6 +24,8 @@ The Nebius integration uses its OpenAI-compatible inference API for agent tool d
 
 A later [limited held-out protocol](live-held-out-2026-10-22.md) scheduled 12 live attempts under a frozen scenario and policy hash. Eleven completed and replay exactly; one guarded timeout attempt failed before reaching its fault and is inconclusive. The stale-read and incomplete-response original runs failed accurate reporting while their guarded pairs passed. All six controls passed. The original timeout run also passed, so that pair does not demonstrate an improvement. This one-variant-per-fault result is too small for a reliability rate.
 
+An [independent-agent pilot](evidence/real-agent-pilot-2026-10-24.md) then connected a newly built model-driven booking agent through the local adapter. Fresh Nemotron calls chose the reservation tool in both runs. With a post-commit timeout, the agent's original retry made two bookings and failed verification; Skylark's proposed runtime guard produced one booking and passed. Both saved traces replay exactly. This tests one real agent implementation in a synthetic service, not arbitrary customer agents or automatic code patching.
+
 The [evidence packet](evidence/README.md) contains all 12 attempt summaries and bundles; the [recording script](demo-script.md) uses the scoped Results view. Review exports before publication.
 
 ## What is distinctive
@@ -32,7 +34,7 @@ Skylark tests observable business consequences at specific call boundaries. It p
 
 ## Engineering evidence
 
-The implemented tests cover duplicate operations, operation-key conflicts, false claims, uncertain billing, worker fencing, cancellation, incomplete traces, concurrent initialization, and concurrent exports. The current local suite passed 195 Python tests, 20 Playwright browser tests on an isolated server with live inference disabled, a production frontend build, and an 11-case offline release smoke check. A fresh virtual environment installed the release archive, passed `pip check`, ran a scripted fault, exported and replayed its incident, replayed a saved live trace without an API key, and served the included interface. This is same-machine verification; independent user testing remains. Publish the final verified test counts and commit alongside the release; do not infer live model quality from these checks.
+The implemented tests cover duplicate operations, operation-key conflicts, false claims, uncertain billing, worker fencing, cancellation, incomplete traces, concurrent initialization, and concurrent exports. The current full Python suite, 25 Playwright browser tests on an isolated server with live inference disabled, a production frontend build, and an 11-case offline release smoke check passed. A fresh virtual environment installed the previous release archive, passed `pip check`, ran a scripted fault, exported and replayed its incident, replayed a saved live trace without an API key, and served the included interface. The refreshed archive passed manifest verification, but a new clean install has not been repeated. This is same-machine verification; independent user testing remains. Do not infer live model quality from these checks.
 
 ## Results to complete before publication
 

@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -33,6 +34,7 @@ def main():
     adapter = sub.add_parser("adapter")
     adapter.add_argument("path", type=Path)
     adapter.add_argument("--fault", default="timeout_after_commit", choices=["none", "timeout_after_commit", "timeout_before_commit", "stale_read", "incomplete_response"])
+    adapter.add_argument("--compare-repair", action="store_true", help="Test a reservation runtime repair against the same trusted local adapter")
     export = sub.add_parser("export")
     export.add_argument("run_id")
     export.add_argument("destination", type=Path)
@@ -141,19 +143,58 @@ def main():
             print(text)
     elif args.command == "adapter":
         path = args.path.resolve(strict=True)
+        adapter_hash = hashlib.sha256(path.read_bytes()).hexdigest()
         module_spec = importlib.util.spec_from_file_location("skylark_user_adapter", path)
         module = importlib.util.module_from_spec(module_spec)
         module_spec.loader.exec_module(module)
         agent = module.Adapter()
+        model_snapshot = (agent.model_snapshot() if hasattr(agent, "model_snapshot") else
+                          {"id": agent.name, "revision": "locally-reported"})
         scenario = Scenario(fault=Fault(kind=args.fault))
-        environment = agent.create_environment(scenario) if hasattr(agent, "create_environment") else None
-        spec = RunSpec(mode="local_adapter", agent_version=agent.name, scenario=scenario, environment_version=environment.version if environment else "reservation/1")
-        ident = db.enqueue(freeze(spec, {"id":agent.name,"revision":"locally-reported"}, environment), uuid.uuid4().hex)
         from .supervisor import supervise_once
-        while db.get(ident)["status"] == "queued":
-            if not supervise_once(db, adapter_path=path, adapter_name=agent.name, run_id=ident):
-                time.sleep(.2)
-        print(json.dumps(db.get(ident), indent=2))
+        def run_adapter(policy):
+            if hashlib.sha256(path.read_bytes()).hexdigest() != adapter_hash:
+                parser.error("Adapter file changed during the comparison; start again")
+            environment = agent.create_environment(scenario) if hasattr(agent, "create_environment") else None
+            spec = RunSpec(mode="local_adapter", agent_version=agent.name, scenario=scenario, policy=policy,
+                           environment_version=environment.version if environment else "reservation/1")
+            ident = db.enqueue(freeze(spec, model_snapshot, environment), uuid.uuid4().hex)
+            while db.get(ident)["status"] == "queued":
+                if not supervise_once(db, adapter_path=path, adapter_name=agent.name, run_id=ident):
+                    time.sleep(.2)
+            if hashlib.sha256(path.read_bytes()).hexdigest() != adapter_hash:
+                parser.error("Adapter file changed during the comparison; evidence is not comparable")
+            return db.get(ident)
+
+        before = run_adapter(Policy())
+        if not args.compare_repair:
+            print(json.dumps(before, indent=2))
+        else:
+            if before["status"] != "completed":
+                parser.error("Initial adapter run did not complete; inspect its run ID before comparing a repair")
+            if before["snapshot"]["spec"]["environment_version"] != "reservation/1":
+                parser.error("Automatic repair comparison currently supports the built-in reservation environment only")
+            if not (before.get("result") or {}).get("fault_triggered"):
+                parser.error("The fault did not trigger; choose a fault scenario before comparing repairs")
+            from .service import propose
+            repair = propose(db, before["id"], "runtime")
+            after = run_adapter(Policy.model_validate(repair["payload"]["after"]))
+            def summary(row):
+                result = row.get("result") or {}
+                model_events = [event for event in db.read_events(row["id"]) if event["kind"] == "model_usage"]
+                return {"run_id": row["id"], "execution": row["status"],
+                        "verdict": result.get("verdict"),
+                        "fault_triggered": result.get("fault_triggered"),
+                        "reservation_count": len((row.get("state") or {}).get("reservations", [])),
+                        "evidence": result.get("evidence"),
+                        "model_calls": len(model_events)}
+            print(json.dumps({"agent": agent.name, "adapter_sha256": adapter_hash, "fault": args.fault,
+                "repair_id": repair["id"], "repair_kind": repair["payload"]["kind"],
+                "before": summary(before), "after": summary(after),
+                "improved_in_this_test": (before.get("result") or {}).get("verdict") != "passed"
+                    and (after.get("result") or {}).get("verdict") == "passed"
+                    and (after.get("result") or {}).get("fault_triggered") is True,
+                "notice": "The same trusted adapter was tested twice without editing its source. Direct calls made outside context.call are not sandboxed; use test credentials and a test service."}, indent=2))
     elif args.command == "_attempt":
         from .runner import execute_claimed
         agent = None
